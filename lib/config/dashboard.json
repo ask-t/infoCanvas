@@ -1,0 +1,20 @@
+[
+  {
+    "symbol": "AAPL",
+    "interval": "5min",
+    "image": "/stalls/takoyaki.png",
+    "position": {
+      "left": "20%",
+      "bottom": "40%"
+    }
+  },
+  {
+    "symbol": "TSLA",
+    "interval": "5min",
+    "image": "/stalls/sushi.png",
+    "position": {
+      "left": "60%",
+      "bottom": "40%"
+    }
+  }
+]
