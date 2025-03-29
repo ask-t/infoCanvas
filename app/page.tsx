@@ -8,6 +8,7 @@ import { useStockData } from "@/hooks/useStockData";
 import dashboardConfig from "@/lib/config/dashboard.json";
 import { StockData } from "@/types/stock";
 import useLogMessages, { LogMessage } from "@/hooks/useLogMessages";
+import { IntervalProvider } from "@/contexts/IntervalContext";
 
 // コンポーネントのインポート
 import Header from "@/components/Header";
@@ -17,13 +18,15 @@ import ChartOverlay from "@/components/ChartOverlay";
 import Animations from "@/styles/animations";
 import MarqueeDisplay from "@/components/MarqueeDisplay";
 
-export default function HomePage() {
+// アプリケーションのメインコンポーネント
+function App() {
   const searchParams = useSearchParams();
   const mode = searchParams.get('mode');
   const demoState = mode === 'demo' ? searchParams.get('state') : null;
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const { messages, addLogMessage } = useLogMessages();
   const [apiStatus, setApiStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [viewMode, setViewMode] = useState<'stalls' | 'dashboard'>('stalls');
 
   // アプリ起動時にAPI接続開始のログを表示
   useEffect(() => {
@@ -173,10 +176,20 @@ export default function HomePage() {
     });
   };
 
+  const toggleViewMode = () => {
+    const newMode = viewMode === 'stalls' ? 'dashboard' : 'stalls';
+    setViewMode(newMode);
+    addLogMessage({
+      text: `表示モードを${newMode === 'stalls' ? '屋台表示' : 'ダッシュボード表示'}に切り替えました`,
+      type: 'info',
+      timestamp: new Date()
+    });
+  };
+
   return (
     <main className="relative min-h-screen w-full overflow-hidden">
       {/* ヘッダーコンポーネント */}
-      <Header />
+      <Header addLogMessage={addLogMessage} />
 
       {/* 背景コンポーネント */}
       <Background />
@@ -187,13 +200,47 @@ export default function HomePage() {
         speed={150}
       />
 
-      {/* 屋台コンテナコンポーネント */}
-      <StallContainer
-        dashboardConfig={dashboardConfig}
-        stockDataBySymbol={stockDataBySymbol}
-        demoState={demoState}
-        onOpenChart={handleOpenChart}
-      />
+      {/* 表示モード切替ボタン */}
+      <div className="fixed top-20 right-4 z-30">
+        <button
+          onClick={toggleViewMode}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-lg text-sm font-medium flex items-center"
+        >
+          {viewMode === 'stalls' ? (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              ダッシュボード表示
+            </>
+          ) : (
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              </svg>
+              屋台表示
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* 表示モードに応じたコンテンツ */}
+      {viewMode === 'stalls' ? (
+        <StallContainer
+          dashboardConfig={dashboardConfig}
+          stockDataBySymbol={stockDataBySymbol}
+          demoState={demoState}
+          onOpenChart={handleOpenChart}
+        />
+      ) : (
+        <div className="pt-40 pb-16 px-4">
+          <Dashboard
+            stockDataBySymbol={stockDataBySymbol}
+            onOpenChart={handleOpenChart}
+            addLogMessage={addLogMessage}
+          />
+        </div>
+      )}
 
       {/* チャートオーバーレイ */}
       {selectedSymbol && (
@@ -207,5 +254,14 @@ export default function HomePage() {
       {/* アニメーションスタイル */}
       <Animations />
     </main>
+  );
+}
+
+// IntervalProviderでラップしたアプリケーションをエクスポート
+export default function HomePage() {
+  return (
+    <IntervalProvider>
+      <App />
+    </IntervalProvider>
   );
 }
