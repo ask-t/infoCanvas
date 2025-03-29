@@ -1,6 +1,11 @@
 // 株式データの型定義
 export type StockData = {
   close: number;
+  volume?: number;
+  date?: string;
+  open?: number;
+  high?: number;
+  low?: number;
   [key: string]: unknown
 };
 

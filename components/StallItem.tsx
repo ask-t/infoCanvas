@@ -1,14 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import { DashboardItem, StatusType } from '@/types/stock';
+import StockTooltip from './StockTooltip';
 
 interface StallItemProps {
   item: DashboardItem;
   status: StatusType;
+  stockData: any;
   onOpenChart: (symbol: string) => void;
 }
 
-const StallItem: React.FC<StallItemProps> = ({ item, status, onOpenChart }) => {
+const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenChart }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
   const showCustomer = ["surge", "up", "stable"].includes(status);
   const customerClass =
     status === "surge"
@@ -40,7 +44,15 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, onOpenChart }) => {
       className="absolute cursor-pointer"
       style={{ left: item.position.left, bottom: `calc(${item.position.bottom} - 40px)` }}
       onClick={() => onOpenChart(item.symbol)}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
     >
+      <StockTooltip
+        symbol={item.symbol}
+        data={stockData}
+        visible={showTooltip}
+      />
+
       <Image
         src={item.image}
         alt={item.symbol}

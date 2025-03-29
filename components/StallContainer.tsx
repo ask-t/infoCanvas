@@ -27,6 +27,7 @@ const StallContainer: React.FC<StallContainerProps> = ({
             key={item.symbol}
             item={item}
             status={status}
+            stockData={data}
             onOpenChart={onOpenChart}
           />
         );
