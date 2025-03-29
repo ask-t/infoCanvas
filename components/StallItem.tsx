@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
-import { DashboardItem, StatusType } from '@/types/stock';
+import { DashboardItem, StatusType, StockData } from '@/types/stock';
 import StockTooltip from './StockTooltip';
 
 interface StallItemProps {
   item: DashboardItem;
   status: StatusType;
-  stockData: any;
+  stockData: StockData[] | null;
   onOpenChart: (symbol: string) => void;
 }
 

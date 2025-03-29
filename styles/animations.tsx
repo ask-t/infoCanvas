@@ -9,15 +9,15 @@ const Animations: React.FC = () => {
       }
       
       .animate-bounce.fast {
-        animation: bounce 0.3s infinite;
+        animation: bounce 0.6s infinite;
       }
       
       .animate-bounce.normal {
-        animation: bounce 0.8s infinite;
+        animation: bounce 1s infinite;
       }
-
+      
       .animate-bounce.slow {
-        animation: bounce 1.8s infinite;
+        animation: bounce 1.5s infinite;
       }
       
       .animate-float-slow {
@@ -27,6 +27,56 @@ const Animations: React.FC = () => {
       @keyframes float {
         0%, 100% { transform: translate(-50%, 0); }
         50% { transform: translate(-50%, -10px); }
+      }
+      
+      /* LEDディスプレイのアニメーション */
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+      }
+      
+      .font-led {
+        font-family: 'Courier New', monospace;
+        letter-spacing: 2px;
+        animation: blink 2s infinite;
+        display: inline-block;
+        position: relative;
+        overflow: hidden;
+      }
+      
+      /* LEDドット背景パターン */
+      .bg-dot-pattern {
+        background-image: radial-gradient(rgba(0, 0, 0, 0.3) 1px, transparent 1px);
+        background-size: 3px 3px;
+      }
+      
+      /* エラーメッセージ用の点滅効果 */
+      .error-flash {
+        color: #ff0000 !important;
+        animation: error-blink 0.5s infinite;
+        font-weight: bold;
+      }
+      
+      @keyframes error-blink {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0.5; }
+      }
+      
+      /* 警告メッセージ用の点滅効果 */
+      .warning-flash {
+        color: #ffcc00 !important;
+        animation: warning-blink 1s infinite;
+      }
+      
+      @keyframes warning-blink {
+        0%, 75% { opacity: 1; }
+        76%, 100% { opacity: 0.7; }
+      }
+      
+      /* 成功メッセージ用の効果 */
+      .success-glow {
+        color: #00ff00 !important;
+        text-shadow: 0 0 5px rgba(0, 255, 0, 0.7), 0 0 10px rgba(0, 255, 0, 0.5) !important;
       }
     `}</style>
   );
