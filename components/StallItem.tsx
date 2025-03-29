@@ -163,12 +163,6 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
-      {/* Debug information (displayed only in development environment) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="absolute -bottom-8 left-0 bg-black bg-opacity-75 text-white text-xs px-1 py-0.5 rounded z-50">
-          {displayedStatus}
-        </div>
-      )}
 
       <StockTooltip
         symbol={item.symbol}
