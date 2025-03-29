@@ -200,30 +200,6 @@ function App() {
         speed={150}
       />
 
-      {/* 表示モード切替ボタン */}
-      <div className="fixed top-20 right-4 z-30">
-        <button
-          onClick={toggleViewMode}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-lg text-sm font-medium flex items-center"
-        >
-          {viewMode === 'stalls' ? (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-              </svg>
-              ダッシュボード表示
-            </>
-          ) : (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-              </svg>
-              屋台表示
-            </>
-          )}
-        </button>
-      </div>
-
       {/* 表示モードに応じたコンテンツ */}
       {viewMode === 'stalls' ? (
         <StallContainer
