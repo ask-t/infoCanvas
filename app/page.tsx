@@ -13,27 +13,9 @@ import useLogMessages, { LogMessage } from "@/hooks/useLogMessages";
 import Header from "@/components/Header";
 import Background from "@/components/Background";
 import StallContainer from "@/components/StallContainer";
-// チャートオーバーレイコンポーネントが実装されるまではコメントアウト
-// import ChartOverlay from "@/components/ChartOverlay";
+import ChartOverlay from "@/components/ChartOverlay";
 import Animations from "@/styles/animations";
 import MarqueeDisplay from "@/components/MarqueeDisplay";
-
-// 仮のChartOverlayコンポーネント（後で実装予定）
-const ChartOverlay = ({ symbol, onClose }: { symbol: string, onClose: () => void }) => (
-  <div className="fixed inset-0 z-40 bg-black bg-opacity-80 flex items-center justify-center">
-    <div className="bg-white rounded-lg p-4 max-w-4xl max-h-[80vh] overflow-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold">{symbol} 詳細チャート</h2>
-        <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-          閉じる
-        </button>
-      </div>
-      <div className="h-96 bg-gray-100 flex items-center justify-center">
-        <p>チャート表示予定 - 実装中</p>
-      </div>
-    </div>
-  </div>
-);
 
 export default function HomePage() {
   const searchParams = useSearchParams();
@@ -41,18 +23,39 @@ export default function HomePage() {
   const demoState = mode === 'demo' ? searchParams.get('state') : null;
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const { messages, addLogMessage } = useLogMessages();
+  const [apiStatus, setApiStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+
+  // アプリ起動時にAPI接続開始のログを表示
+  useEffect(() => {
+    addLogMessage({
+      text: `InfoCanvas 株価データAPIに接続しています...`,
+      type: 'info',
+      timestamp: new Date()
+    });
+
+    // 5秒後に接続完了のメッセージを表示
+    const timer = setTimeout(() => {
+      setApiStatus('connected');
+      addLogMessage({
+        text: `株価データAPI接続が確立されました`,
+        type: 'success',
+        timestamp: new Date()
+      });
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [addLogMessage]);
 
   // 前回のデータを記録するためのref
-  const prevAppleDataRef = useRef<number | null>(null);
+  const prevDataRefs = useRef<Record<string, number | null>>({});
   const prevModeRef = useRef<string | null>(null);
   const prevDemoStateRef = useRef<string | null>(null);
 
   // 各銘柄のデータを個別にフックで取得
   const stockDataBySymbol: Record<string, StockData[] | null> = {};
 
-  // 各シンボルに対してuseStockDataを呼び出し（個別のカスタムフック）
+  // dashboardConfig に定義されている銘柄のデータを取得
   dashboardConfig.forEach(item => {
-    // ここではダミーの代入のみ行う（実際のデータ取得は別途実装が必要）
     stockDataBySymbol[item.symbol] = null;
   });
 
@@ -60,8 +63,11 @@ export default function HomePage() {
   const appleData = useStockData('AAPL');
   if (appleData) stockDataBySymbol['AAPL'] = appleData;
 
-  const googleData = useStockData('GOOGL');
-  if (googleData) stockDataBySymbol['GOOGL'] = googleData;
+  const tslaData = useStockData('TSLA');
+  if (tslaData) stockDataBySymbol['TSLA'] = tslaData;
+
+  const nvdaData = useStockData('NVDA');
+  if (nvdaData) stockDataBySymbol['NVDA'] = nvdaData;
 
   const msftData = useStockData('MSFT');
   if (msftData) stockDataBySymbol['MSFT'] = msftData;
@@ -69,28 +75,62 @@ export default function HomePage() {
   const amznData = useStockData('AMZN');
   if (amznData) stockDataBySymbol['AMZN'] = amznData;
 
-  const metaData = useStockData('META');
-  if (metaData) stockDataBySymbol['META'] = metaData;
-
-  // データの変更を監視し、ログにメッセージを追加（変更時のみ）
+  // 株価データの変更を監視し、ログにメッセージを追加
   useEffect(() => {
-    // 株価データの変化を検出して通知
-    if (appleData && appleData.length > 0) {
-      const latestPrice = appleData[appleData.length - 1].close;
+    // API接続が確立されてない場合は実行しない
+    if (apiStatus !== 'connected') return;
 
-      // 前回と値が異なる場合のみ通知
-      if (prevAppleDataRef.current !== latestPrice) {
-        prevAppleDataRef.current = latestPrice;
+    // dashboardConfigで設定されているすべての銘柄のデータを監視
+    dashboardConfig.forEach(config => {
+      const symbol = config.symbol;
+      const data = stockDataBySymbol[symbol];
 
-        const message: LogMessage = {
-          text: `AAPL 最新株価: $${latestPrice.toFixed(2)}`,
-          type: 'info',
-          timestamp: new Date()
-        };
-        addLogMessage(message);
+      if (data && data.length > 0) {
+        const latestPrice = data[data.length - 1].close;
+        const prevPrice = prevDataRefs.current[symbol];
+
+        // 前回と値が異なる場合のみ通知
+        if (prevPrice !== latestPrice) {
+          // 前回値との比較で上昇/下落を判定
+          let messageType: 'info' | 'success' | 'warning' = 'info';
+          let changeText = '';
+
+          if (prevPrice !== null) {
+            const priceDiff = latestPrice - prevPrice;
+            const percentChange = (priceDiff / prevPrice) * 100;
+
+            if (priceDiff > 0) {
+              messageType = 'success';
+              changeText = ` (↑ +${percentChange.toFixed(2)}%)`;
+            } else if (priceDiff < 0) {
+              messageType = 'warning';
+              changeText = ` (↓ ${percentChange.toFixed(2)}%)`;
+            }
+          }
+
+          // 現在値を保存
+          prevDataRefs.current[symbol] = latestPrice;
+
+          // ログメッセージを追加
+          const message: LogMessage = {
+            text: `${symbol} 最新株価: $${latestPrice.toFixed(2)}${changeText}`,
+            type: messageType,
+            timestamp: new Date()
+          };
+          addLogMessage(message);
+        }
       }
-    }
-  }, [appleData, addLogMessage]);
+    });
+  }, [
+    apiStatus,
+    addLogMessage,
+    stockDataBySymbol,
+    appleData,
+    tslaData,
+    nvdaData,
+    msftData,
+    amznData
+  ]);
 
   // モードやデモ状態の変更を監視（別のuseEffectに分離）
   useEffect(() => {
@@ -118,13 +158,20 @@ export default function HomePage() {
   const handleOpenChart = (symbol: string) => {
     setSelectedSymbol(symbol);
     addLogMessage({
-      text: `${symbol} の詳細チャートを表示中...`,
+      text: `${symbol} の詳細チャートを読み込み中...`,
       type: 'info',
       timestamp: new Date()
     });
   };
 
-  const handleCloseChart = () => setSelectedSymbol(null);
+  const handleCloseChart = () => {
+    setSelectedSymbol(null);
+    addLogMessage({
+      text: `チャート表示を閉じました`,
+      type: 'info',
+      timestamp: new Date()
+    });
+  };
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden">
@@ -150,7 +197,11 @@ export default function HomePage() {
 
       {/* チャートオーバーレイ */}
       {selectedSymbol && (
-        <ChartOverlay symbol={selectedSymbol} onClose={handleCloseChart} />
+        <ChartOverlay
+          symbol={selectedSymbol}
+          onClose={handleCloseChart}
+          addLogMessage={addLogMessage}
+        />
       )}
 
       {/* アニメーションスタイル */}

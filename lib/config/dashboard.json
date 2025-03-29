@@ -1,7 +1,6 @@
 [
   {
     "symbol": "AAPL",
-    "interval": "5min",
     "image": "/stalls/takoyaki.png",
     "position": {
       "left": "20%",
@@ -10,11 +9,34 @@
   },
   {
     "symbol": "TSLA",
-    "interval": "5min",
     "image": "/stalls/sushi.png",
     "position": {
       "left": "60%",
       "bottom": "40%"
+    }
+  },
+  {
+    "symbol": "NVDA",
+    "image": "/stalls/ramen.png",
+    "position": {
+      "left": "40%",
+      "bottom": "25%"
+    }
+  },
+  {
+    "symbol": "MSFT",
+    "image": "/stalls/lemonade.png",
+    "position": {
+      "left": "75%",
+      "bottom": "30%"
+    }
+  },
+  {
+    "symbol": "AMZN",
+    "image": "/stalls/ice.png",
+    "position": {
+      "left": "15%",
+      "bottom": "20%"
     }
   }
 ]
