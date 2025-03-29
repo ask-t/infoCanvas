@@ -1,4 +1,4 @@
-/* InfoCanvas - 背景 + 屋台配置 + APIキーを環境変数から利用する準備（状態別エフェクト切替対応） */
+/* InfoCanvas - 背景 + 屋台配置 + API key to use from environment variable (state-specific effect switching) */
 
 'use client';
 
@@ -10,7 +10,7 @@ import { StockData } from "@/types/stock";
 import useLogMessages, { LogMessage } from "@/hooks/useLogMessages";
 import { IntervalProvider } from "@/contexts/IntervalContext";
 
-// コンポーネントのインポート
+// Component imports
 import Header from "@/components/Header";
 import Background from "@/components/Background";
 import StallContainer from "@/components/StallContainer";
@@ -18,7 +18,7 @@ import ChartOverlay from "@/components/ChartOverlay";
 import Animations from "@/styles/animations";
 import MarqueeDisplay from "@/components/MarqueeDisplay";
 
-// アプリケーションのメインコンポーネント
+// Application main component
 function App() {
   const searchParams = useSearchParams();
   const mode = searchParams.get('mode');
@@ -28,19 +28,19 @@ function App() {
   const [apiStatus, setApiStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [viewMode, setViewMode] = useState<'stalls' | 'dashboard'>('stalls');
 
-  // アプリ起動時にAPI接続開始のログを表示
+  // Log message when application starts to connect to API
   useEffect(() => {
     addLogMessage({
-      text: `InfoCanvas 株価データAPIに接続しています...`,
+      text: `InfoCanvas stock data API connection is starting...`,
       type: 'info',
       timestamp: new Date()
     });
 
-    // 5秒後に接続完了のメッセージを表示
+    // Show message after connection is established after 5 seconds
     const timer = setTimeout(() => {
       setApiStatus('connected');
       addLogMessage({
-        text: `株価データAPI接続が確立されました`,
+        text: `Stock data API connection established`,
         type: 'success',
         timestamp: new Date()
       });
@@ -49,20 +49,20 @@ function App() {
     return () => clearTimeout(timer);
   }, [addLogMessage]);
 
-  // 前回のデータを記録するためのref
+  // ref to record previous data
   const prevDataRefs = useRef<Record<string, number | null>>({});
   const prevModeRef = useRef<string | null>(null);
   const prevDemoStateRef = useRef<string | null>(null);
 
-  // 各銘柄のデータを個別にフックで取得
+  // Get data for each stock individually
   const stockDataBySymbol: Record<string, StockData[] | null> = {};
 
-  // dashboardConfig に定義されている銘柄のデータを取得
+  // Get data for stocks defined in dashboardConfig
   dashboardConfig.forEach(item => {
     stockDataBySymbol[item.symbol] = null;
   });
 
-  // 主要銘柄のデータを取得
+  // Get data for main stocks
   const appleData = useStockData('AAPL');
   if (appleData) stockDataBySymbol['AAPL'] = appleData;
 
@@ -78,12 +78,12 @@ function App() {
   const amznData = useStockData('AMZN');
   if (amznData) stockDataBySymbol['AMZN'] = amznData;
 
-  // 株価データの変更を監視し、ログにメッセージを追加
+  // Monitor stock data changes and add log messages
   useEffect(() => {
-    // API接続が確立されてない場合は実行しない
+    // Do not execute if API connection is not established
     if (apiStatus !== 'connected') return;
 
-    // dashboardConfigで設定されているすべての銘柄のデータを監視
+    // Monitor data for all stocks defined in dashboardConfig
     dashboardConfig.forEach(config => {
       const symbol = config.symbol;
       const data = stockDataBySymbol[symbol];
@@ -92,9 +92,9 @@ function App() {
         const latestPrice = data[data.length - 1].close;
         const prevPrice = prevDataRefs.current[symbol];
 
-        // 前回と値が異なる場合のみ通知
+        // Notify only if the value has changed
         if (prevPrice !== latestPrice) {
-          // 前回値との比較で上昇/下落を判定
+          // Determine if the stock price has increased or decreased
           let messageType: 'info' | 'success' | 'warning' = 'info';
           let changeText = '';
 
@@ -111,12 +111,12 @@ function App() {
             }
           }
 
-          // 現在値を保存
+          // Save current price
           prevDataRefs.current[symbol] = latestPrice;
 
-          // ログメッセージを追加
+          // Add log message
           const message: LogMessage = {
-            text: `${symbol} 最新株価: $${latestPrice.toFixed(2)}${changeText}`,
+            text: `${symbol} Latest stock price: $${latestPrice.toFixed(2)}${changeText}`,
             type: messageType,
             timestamp: new Date()
           };
@@ -135,9 +135,9 @@ function App() {
     amznData
   ]);
 
-  // モードやデモ状態の変更を監視（別のuseEffectに分離）
+  // Monitor mode and demo state changes (separate useEffect)
   useEffect(() => {
-    // モードまたはデモ状態が変わった場合のみ通知
+    // Notify only if mode or demo state changes
     if (mode !== prevModeRef.current || demoState !== prevDemoStateRef.current) {
       prevModeRef.current = mode;
       prevDemoStateRef.current = demoState;
@@ -149,7 +149,7 @@ function App() {
               demoState === 'abnormal' ? 'error' : 'info';
 
         const message: LogMessage = {
-          text: `デモモード: ${demoState} 状態をシミュレーション中...`,
+          text: `Demo mode: ${demoState} state is being simulated...`,
           type: messageType,
           timestamp: new Date()
         };
@@ -161,7 +161,7 @@ function App() {
   const handleOpenChart = (symbol: string) => {
     setSelectedSymbol(symbol);
     addLogMessage({
-      text: `${symbol} の詳細チャートを読み込み中...`,
+      text: `Loading ${symbol} stock chart...`,
       type: 'info',
       timestamp: new Date()
     });
@@ -170,7 +170,7 @@ function App() {
   const handleCloseChart = () => {
     setSelectedSymbol(null);
     addLogMessage({
-      text: `チャート表示を閉じました`,
+      text: `Closed stock chart`,
       type: 'info',
       timestamp: new Date()
     });
@@ -180,7 +180,7 @@ function App() {
     const newMode = viewMode === 'stalls' ? 'dashboard' : 'stalls';
     setViewMode(newMode);
     addLogMessage({
-      text: `表示モードを${newMode === 'stalls' ? '屋台表示' : 'ダッシュボード表示'}に切り替えました`,
+      text: `Switched to ${newMode === 'stalls' ? 'stall display' : 'dashboard display'}`,
       type: 'info',
       timestamp: new Date()
     });
@@ -188,19 +188,19 @@ function App() {
 
   return (
     <main className="relative min-h-screen w-full overflow-hidden">
-      {/* ヘッダーコンポーネント */}
+      {/* Header component */}
       <Header addLogMessage={addLogMessage} />
 
-      {/* 背景コンポーネント */}
+      {/* Background component */}
       <Background />
 
-      {/* 電光掲示板（ログ表示） */}
+      {/* Digital sign (log display) */}
       <MarqueeDisplay
         messages={messages}
         speed={150}
       />
 
-      {/* 表示モードに応じたコンテンツ */}
+      {/* Content based on view mode */}
       {viewMode === 'stalls' ? (
         <StallContainer
           dashboardConfig={dashboardConfig}
@@ -218,7 +218,7 @@ function App() {
         </div>
       )}
 
-      {/* チャートオーバーレイ */}
+      {/* Stock chart overlay */}
       {selectedSymbol && (
         <ChartOverlay
           symbol={selectedSymbol}
@@ -227,13 +227,13 @@ function App() {
         />
       )}
 
-      {/* アニメーションスタイル */}
+      {/* Animation styles */}
       <Animations />
     </main>
   );
 }
 
-// IntervalProviderでラップしたアプリケーションをエクスポート
+// Export application wrapped in IntervalProvider
 export default function HomePage() {
   return (
     <IntervalProvider>

@@ -29,7 +29,7 @@ const Animations: React.FC = () => {
         50% { transform: translate(-50%, -10px); }
       }
       
-      /* LEDディスプレイのアニメーション */
+      /* Animation for LED display */
       @keyframes blink {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.7; }
@@ -44,13 +44,13 @@ const Animations: React.FC = () => {
         overflow: hidden;
       }
       
-      /* LEDドット背景パターン */
+      /* LED dot background pattern */
       .bg-dot-pattern {
         background-image: radial-gradient(rgba(0, 0, 0, 0.3) 1px, transparent 1px);
         background-size: 3px 3px;
       }
       
-      /* エラーメッセージ用の点滅効果 */
+      /* Blinking effect for error messages */
       .error-flash {
         color: #ff0000 !important;
         animation: error-blink 0.5s infinite;
@@ -62,7 +62,7 @@ const Animations: React.FC = () => {
         50%, 100% { opacity: 0.5; }
       }
       
-      /* 警告メッセージ用の点滅効果 */
+      /* Blinking effect for warning messages */
       .warning-flash {
         color: #ffcc00 !important;
         animation: warning-blink 1s infinite;
@@ -73,7 +73,7 @@ const Animations: React.FC = () => {
         76%, 100% { opacity: 0.7; }
       }
       
-      /* 成功メッセージ用の効果 */
+      /* Effect for success messages */
       .success-glow {
         color: #00ff00 !important;
         text-shadow: 0 0 5px rgba(0, 255, 0, 0.7), 0 0 10px rgba(0, 255, 0, 0.5) !important;

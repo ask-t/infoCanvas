@@ -14,7 +14,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
   const [showTooltip, setShowTooltip] = useState(false);
   const [displayedStatus, setDisplayedStatus] = useState<StatusType>(status);
 
-  // 株価データから直接状態を計算（表示の一貫性を保つため）
+  // Calculate status directly from stock data (to maintain display consistency)
   useEffect(() => {
     if (stockData && stockData.length >= 2) {
       const latestData = stockData[stockData.length - 1];
@@ -48,15 +48,15 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
     }
   }, [stockData, status, item.symbol]);
 
-  // ステータスに基づいて顧客表示とアニメーションを決定
+  // Determine customer display and animation based on status
   let customerImage = null;
   let effectImage = null;
-  let stallClassName = "w-32"; // デフォルトのスタイル
+  let stallClassName = "w-32"; // Default style
 
-  // 状態に応じた表示設定
+  // Display settings based on status
   switch (displayedStatus) {
     case "surge":
-      // 高騰状態: 顧客表示（早い動き）+ 店が光る
+      // Surge state: Customer display (fast movement) + Stall lights up
       customerImage = (
         <Image
           src="/icons/customers.png"
@@ -70,7 +70,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
       break;
 
     case "up":
-      // 上昇状態: 顧客表示（普通の動き）
+      // Up state: Customer display (normal movement)
       customerImage = (
         <Image
           src="/icons/customers.png"
@@ -84,7 +84,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
       break;
 
     case "stable":
-      // 安定状態: 顧客表示（遅い動き）
+      // Stable state: Customer display (slow movement)
       customerImage = (
         <Image
           src="/icons/customers.png"
@@ -98,7 +98,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
       break;
 
     case "crash":
-      // 暴落状態: 雷アイコン + 暗い店舗
+      // Crash state: Lightning icon + Dark stall
       effectImage = (
         <Image
           src="/icons/thunder.png"
@@ -112,7 +112,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
       break;
 
     case "down":
-      // 下降状態: 幽霊アイコン + やや暗い店舗
+      // Down state: Ghost icon + Slightly dark stall
       effectImage = (
         <Image
           src="/icons/ghost.png"
@@ -126,7 +126,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
       break;
 
     case "abnormal":
-      // 異常状態: 警告アイコン
+      // Abnormal state: Warning icon
       effectImage = (
         <Image
           src="/icons/alert.png"
@@ -141,7 +141,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
 
     case "unknown":
     default:
-      // 不明状態: 疑問符アイコン
+      // Unknown state: Question mark icon
       effectImage = (
         <Image
           src="/icons/question.png"
@@ -163,7 +163,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
-      {/* デバッグ情報（開発環境のみ表示） */}
+      {/* Debug information (displayed only in development environment) */}
       {process.env.NODE_ENV === 'development' && (
         <div className="absolute -bottom-8 left-0 bg-black bg-opacity-75 text-white text-xs px-1 py-0.5 rounded z-50">
           {displayedStatus}
@@ -186,7 +186,7 @@ const StallItem: React.FC<StallItemProps> = ({ item, status, stockData, onOpenCh
         height={128}
       />
 
-      {/* 顧客または効果アイコンの表示 */}
+      {/* Display customer or effect icon */}
       {customerImage}
       {effectImage}
     </div>

@@ -6,7 +6,7 @@ import { LogMessage } from '@/hooks/useLogMessages';
 import { useStockData } from '@/hooks/useStockData';
 import InfoCanvas from "./InfoCanvas";
 
-// 仮の会社名マッピング
+// Temporary company name mapping
 const companyNames: Record<string, string> = {
   'AAPL': 'Apple Inc.',
   'TSLA': 'Tesla, Inc.',
@@ -32,10 +32,10 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [chartTimeframe, setChartTimeframe] = useState<'day' | 'week' | 'month'>('day');
 
-  // useStockDataフックを使ってデータを取得
+  // useStockData hook to get data
   const stockData = useStockData(symbol);
 
-  // ログメッセージを追加する関数
+  // Function to add log message
   const logMessage = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     if (addLogMessage) {
       addLogMessage({
@@ -46,32 +46,32 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     }
   };
 
-  // チャート期間が変更されたときにログを表示
+  // Log message when chart period changes
   useEffect(() => {
     if (stockData) {
-      const timeframeText = chartTimeframe === 'day' ? '1日' : chartTimeframe === 'week' ? '1週間' : '1ヶ月';
-      logMessage(`${symbol}のチャート表示期間を${timeframeText}に変更しました`, 'info');
+      const timeframeText = chartTimeframe === 'day' ? '1 day' : chartTimeframe === 'week' ? '1 week' : '1 month';
+      logMessage(`Changed chart display period to ${timeframeText} for ${symbol}`, 'info');
     }
   }, [chartTimeframe, symbol, stockData]);
 
   useEffect(() => {
     if (stockData) {
       setLoading(false);
-      logMessage(`${symbol}のチャートデータを正常に読み込みました`, 'success');
+      logMessage(`Successfully loaded chart data for ${symbol}`, 'success');
     }
   }, [stockData, symbol]);
 
-  // チャートデータがない場合のエラー処理
+  // Error handling if no chart data
   useEffect(() => {
     if (!loading && (!stockData || stockData.length === 0)) {
-      setError('チャートデータを取得できませんでした');
-      logMessage(`${symbol}のチャートデータ取得に失敗しました`, 'error');
+      setError('Failed to get chart data');
+      logMessage(`Failed to get chart data for ${symbol}`, 'error');
     } else {
       setError(null);
     }
   }, [loading, stockData, symbol]);
 
-  // 選択された期間に基づいてデータをフィルタリング
+  // Filter data based on selected period
   const getFilteredData = (): StockData[] => {
     if (!stockData || stockData.length === 0) return [];
 
@@ -80,32 +80,32 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
 
     switch (chartTimeframe) {
       case 'day':
-        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24時間前
+        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
         break;
       case 'week':
-        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 1週間前
+        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 1 week ago
         break;
       case 'month':
       default:
-        cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30日前
+        cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
         break;
     }
 
-    // フィルタリングしたデータを返す
+    // Filter data
     const filtered = stockData.filter(data => new Date(data.timestamp) >= cutoffDate);
 
-    // 最低5件のデータを確保（不足する場合はすべてのデータを表示）
+    // Ensure at least 5 data points (display all data if insufficient)
     return filtered.length >= 5 ? filtered : stockData;
   };
 
-  // チャートのレンダリング
+  // Render chart
   const renderChart = () => {
     if (loading) {
       return (
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-4 text-gray-600">チャートデータを読み込み中...</p>
+            <p className="mt-4 text-gray-600">Loading chart data...</p>
           </div>
         </div>
       );
@@ -125,31 +125,31 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     }
 
     const filteredData = getFilteredData();
-    console.log(`期間: ${chartTimeframe}, フィルタ後データ数: ${filteredData.length}`);
+    console.log(`Period: ${chartTimeframe}, Filtered data points: ${filteredData.length}`);
 
     if (filteredData.length === 0) {
       return (
         <div className="flex items-center justify-center h-full text-gray-500">
-          選択された期間のデータがありません
+          No data found for the selected period
         </div>
       );
     }
 
-    // 最高値と最安値を計算
+    // Calculate highest and lowest prices
     const maxPrice = Math.max(...filteredData.map(d => d.high));
     const minPrice = Math.min(...filteredData.map(d => d.low));
     const range = maxPrice - minPrice;
-    const paddedMax = maxPrice + range * 0.1; // 10%のパディングを追加
+    const paddedMax = maxPrice + range * 0.1; // Add 10% padding
     const paddedMin = Math.max(0, minPrice - range * 0.1);
 
-    // 価格上昇/下落の判定
+    // Price change determination
     const firstClose = filteredData[0]?.close || 0;
     const lastClose = filteredData[filteredData.length - 1]?.close || 0;
     const priceChange = lastClose - firstClose;
     const percentChange = ((priceChange / firstClose) * 100).toFixed(2);
     const isPositive = priceChange >= 0;
 
-    // 日付フォーマット設定
+    // Date format setting
     const dateFormat: Intl.DateTimeFormatOptions =
       chartTimeframe === 'day'
         ? { hour: '2-digit', minute: '2-digit' }
@@ -159,7 +159,7 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
 
     return (
       <div className="h-full flex flex-col">
-        {/* 価格概要 */}
+        {/* Price summary */}
         <div className="mb-4 flex justify-between items-center">
           <div>
             <div className="text-3xl font-bold">${lastClose.toFixed(2)}</div>
@@ -168,17 +168,17 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
             </div>
           </div>
           <div className="text-right text-gray-500 text-sm">
-            <div>高値: ${Math.max(...filteredData.map(d => d.high)).toFixed(2)}</div>
-            <div>安値: ${Math.min(...filteredData.map(d => d.low)).toFixed(2)}</div>
-            <div>出来高: {(filteredData.reduce((sum, d) => sum + d.volume, 0) / 1000000).toFixed(2)}M</div>
+            <div>High: ${Math.max(...filteredData.map(d => d.high)).toFixed(2)}</div>
+            <div>Low: ${Math.min(...filteredData.map(d => d.low)).toFixed(2)}</div>
+            <div>Volume: {(filteredData.reduce((sum, d) => sum + d.volume, 0) / 1000000).toFixed(2)}M</div>
           </div>
         </div>
 
-        {/* チャート描画エリア */}
+        {/* Chart drawing area */}
         <div className="flex-1 relative">
-          {/* チャートのSVG */}
+          {/* Chart SVG */}
           <svg className="w-full h-full" viewBox={`0 0 ${filteredData.length} ${paddedMax - paddedMin}`} preserveAspectRatio="none">
-            {/* 価格ライン */}
+            {/* Price line */}
             <path
               d={filteredData.map((d, i) => {
                 const x = i;
@@ -190,7 +190,7 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
               fill="none"
             />
 
-            {/* ローソク足の代わりに価格範囲を表示 */}
+            {/* Price range instead of candlesticks */}
             {filteredData.map((d, i) => {
               const x = i;
               const yHigh = paddedMax - d.high;
@@ -209,20 +209,20 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
             })}
           </svg>
 
-          {/* X軸ラベル（時間または日付） */}
+          {/* X-axis label (time or date) */}
           <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-gray-500">
             {filteredData.length > 0 && (
               <>
-                <div>{new Date(filteredData[0].timestamp).toLocaleString('ja-JP', dateFormat)}</div>
+                <div>{new Date(filteredData[0].timestamp).toLocaleString('en-US', dateFormat)}</div>
                 {filteredData.length > 2 && (
-                  <div>{new Date(filteredData[Math.floor(filteredData.length / 2)].timestamp).toLocaleString('ja-JP', dateFormat)}</div>
+                  <div>{new Date(filteredData[Math.floor(filteredData.length / 2)].timestamp).toLocaleString('en-US', dateFormat)}</div>
                 )}
-                <div>{new Date(filteredData[filteredData.length - 1].timestamp).toLocaleString('ja-JP', dateFormat)}</div>
+                <div>{new Date(filteredData[filteredData.length - 1].timestamp).toLocaleString('en-US', dateFormat)}</div>
               </>
             )}
           </div>
 
-          {/* Y軸ラベル（価格） */}
+          {/* Y-axis label (price) */}
           <div className="absolute top-0 bottom-0 right-0 flex flex-col justify-between text-xs text-gray-500">
             <div>${paddedMax.toFixed(2)}</div>
             <div>${((paddedMax + paddedMin) / 2).toFixed(2)}</div>
@@ -233,7 +233,7 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     );
   };
 
-  // 会社名を取得
+  // Get company name
   const companyName = companyNames[symbol] || symbol;
 
   return (
@@ -249,19 +249,19 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
                 onClick={() => setChartTimeframe('day')}
                 className={`px-3 py-1 text-sm ${chartTimeframe === 'day' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
               >
-                1日
+                1 day
               </button>
               <button
                 onClick={() => setChartTimeframe('week')}
                 className={`px-3 py-1 text-sm ${chartTimeframe === 'week' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
               >
-                1週間
+                1 week
               </button>
               <button
                 onClick={() => setChartTimeframe('month')}
                 className={`px-3 py-1 text-sm ${chartTimeframe === 'month' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
               >
-                1ヶ月
+                1 month
               </button>
             </div>
             <button

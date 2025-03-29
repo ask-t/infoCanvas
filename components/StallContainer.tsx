@@ -17,15 +17,15 @@ const StallContainer: React.FC<StallContainerProps> = ({
   demoState,
   onOpenChart
 }) => {
-  // 各銘柄の状態を管理
+  // Manage the status of each stock
   const [stockStatus, setStockStatus] = useState<Record<string, StatusType>>({});
 
-  // デモステートが設定されている場合、すべての銘柄に同じステータスを適用
+  // If a demo state is set, apply the same status to all stocks
   useEffect(() => {
     if (demoState) {
       const statusMap: Record<string, StatusType> = {};
 
-      // デモステートに基づいてステータスを設定
+      // Set status based on demo state
       dashboardConfig.forEach(item => {
         switch (demoState) {
           case 'surge':
@@ -52,11 +52,11 @@ const StallContainer: React.FC<StallContainerProps> = ({
       });
 
       setStockStatus(statusMap);
-      console.log('デモモード適用:', demoState, statusMap);
-      return; // デモモードの場合、リアルタイムデータに基づく判定はスキップ
+      console.log('Apply demo mode:', demoState, statusMap);
+      return; // If in demo mode, skip real-time data-based determination
     }
 
-    // デモモードでない場合、株価データに基づいて状態を判定
+    // If not in demo mode, determine status based on stock data
     const newStatusMap: Record<string, StatusType> = {};
 
     dashboardConfig.forEach(item => {
@@ -68,7 +68,7 @@ const StallContainer: React.FC<StallContainerProps> = ({
         return;
       }
 
-      // 直近の価格変化を分析
+      // Analyze recent price changes
       const latestData = data[data.length - 1];
       const previousData = data.length > 1 ? data[data.length - 2] : null;
 
@@ -77,38 +77,38 @@ const StallContainer: React.FC<StallContainerProps> = ({
         return;
       }
 
-      // 前回比での価格変化率（短期変動）
+      // Calculate percentage change from previous data (short-term fluctuation)
       const priceChange = latestData.close - previousData.close;
       const percentChange = (priceChange / previousData.close) * 100;
 
-      // 短期変動に基づいて状態を判定（パーセント変化を優先）
+      // Set clear criteria for judgment
       let status: StatusType;
 
-      // 明確な判断基準を設定
+      // Set status based on percentage change
       if (percentChange <= -3) {
-        status = 'crash'; // 3%以上の急激な下落で暴落
+        status = 'crash'; // If price drops by 3% or more, it's a crash
       } else if (percentChange <= -0.5) {
-        status = 'down'; // 0.5-3%の下落で下降
+        status = 'down'; // If price drops between 0.5% and 3%, it's a decline
       } else if (percentChange >= 3) {
-        status = 'surge'; // 3%以上の急激な上昇で高騰
+        status = 'surge'; // If price rises by 3% or more, it's a surge
       } else if (percentChange >= 0.5) {
-        status = 'up'; // 0.5-3%の上昇で上昇
+        status = 'up'; // If price rises between 0.5% and 3%, it's an increase
       } else {
-        // 変動が小さい場合は安定と判断
+        // If the change is small, consider it stable
         status = 'stable';
       }
 
-      // 長期的な傾向も考慮
+      // Consider long-term trends as well
       if (status === 'stable' && data.length >= 5) {
         const olderData = data[data.length - 5];
         if (olderData && olderData.close !== undefined) {
           const longTermChange = ((latestData.close - olderData.close) / olderData.close) * 100;
 
-          // 長期的な下降傾向があれば反映
+          // Reflect long-term downward trend if any
           if (longTermChange <= -5) {
             status = 'down';
           }
-          // 長期的な上昇傾向があれば反映
+          // Reflect long-term upward trend if any
           else if (longTermChange >= 5) {
             status = 'up';
           }
@@ -117,8 +117,8 @@ const StallContainer: React.FC<StallContainerProps> = ({
 
       newStatusMap[symbol] = status;
 
-      // デバッグログ
-      console.log(`${symbol}: 現在値=${latestData.close.toFixed(2)}, 変化=${percentChange.toFixed(2)}%, 状態=${status}`);
+      // Debug log
+      console.log(`${symbol}: Current value=${latestData.close.toFixed(2)}, Change=${percentChange.toFixed(2)}%, Status=${status}`);
     });
 
     setStockStatus(newStatusMap);

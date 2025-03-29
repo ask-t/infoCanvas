@@ -1,4 +1,4 @@
-// 株式データの型定義
+// Type definition for stock data
 export type StockData = {
   close: number;
   volume?: number;
@@ -9,10 +9,10 @@ export type StockData = {
   [key: string]: unknown
 };
 
-// 状態の型定義
+// Type definition for status
 export type StatusType = 'surge' | 'up' | 'stable' | 'crash' | 'down' | 'abnormal' | 'unknown';
 
-// ダッシュボード設定項目の型定義
+// Type definition for dashboard configuration items
 export interface DashboardItem {
   symbol: string;
   image: string;
@@ -22,7 +22,7 @@ export interface DashboardItem {
   };
 }
 
-// 株式状態判定の関数
+// Function to determine stock status
 export function getStockStatus(data: StockData[] | null, demoState: string | null): StatusType {
   if (demoState) return demoState as StatusType;
   if (!data || data.length < 2) return "unknown";
