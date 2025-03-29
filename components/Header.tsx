@@ -10,14 +10,29 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ addLogMessage }) => {
   const { interval, setInterval } = useInterval();
-  const [currentTime, setCurrentTime] = useState(new Date());
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
-  // Update clock
+  // クライアントサイドでのみ時計を表示する
   useEffect(() => {
-    const timer = setInterval(() => {
+    // コンポーネントがマウントされた後に時間を設定
+    let mounted = true;
+
+    if (mounted) {
+      // 初期値を設定
       setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
+
+      // 1秒ごとに更新
+      const timer = window.setInterval(() => {
+        if (mounted) {
+          setCurrentTime(new Date());
+        }
+      }, 1000);
+
+      return () => {
+        mounted = false;
+        window.clearInterval(timer);
+      };
+    }
   }, []);
 
   // Add log message when interval changes
@@ -65,11 +80,11 @@ const Header: React.FC<HeaderProps> = ({ addLogMessage }) => {
 
           {/* Clock display */}
           <div className="text-sm font-mono bg-gray-800 px-3 py-1 rounded-full">
-            {currentTime.toLocaleTimeString('en-US', {
+            {currentTime ? currentTime.toLocaleTimeString('en-US', {
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit'
-            })}
+            }) : '--:--:--'}
           </div>
         </div>
       </div>

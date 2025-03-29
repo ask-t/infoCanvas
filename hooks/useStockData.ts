@@ -3,7 +3,7 @@ import { StockData } from '@/types/stock';
 import { LogMessage } from './useLogMessages';
 import { useInterval, IntervalType } from '@/contexts/IntervalContext';
 
-// 株価データのAPIレスポンスの型定義
+// Type definition for stock data API response
 interface TimeSeriesValue {
   '1. open': string;
   '2. high': string;
@@ -31,15 +31,10 @@ interface ApiResponse {
   'Note'?: string;
 }
 
-// グローバルなaddLogMessageハンドラ
+// Function to set a global logging handler
 let globalLogHandler: ((message: LogMessage) => void) | null = null;
 
-// ロギングハンドラを設定する関数
-export function setGlobalLogHandler(handler: (message: LogMessage) => void) {
-  globalLogHandler = handler;
-}
-
-// ログメッセージを追加する関数
+// Function to add a log message
 function addLogMessage(message: LogMessage) {
   if (globalLogHandler) {
     globalLogHandler(message);
@@ -47,74 +42,94 @@ function addLogMessage(message: LogMessage) {
   console.log(`[${message.type.toUpperCase()}] ${message.text}`);
 }
 
-// APIレスポンスからタイムシリーズデータを取得する関数
+// Function to get time series data from API response
 function getTimeSeriesFromResponse(data: ApiResponse, interval: IntervalType): Record<string, TimeSeriesValue> | null {
+  let timeSeriesData = null;
+
   switch (interval) {
     case '1min':
-      return data['Time Series (1min)'] || null;
+      timeSeriesData = data['Time Series (1min)'] || null;
+      break;
     case '5min':
-      return data['Time Series (5min)'] || null;
+      timeSeriesData = data['Time Series (5min)'] || null;
+      break;
     case '15min':
-      return data['Time Series (15min)'] || null;
+      timeSeriesData = data['Time Series (15min)'] || null;
+      break;
     case '30min':
-      return data['Time Series (30min)'] || null;
+      timeSeriesData = data['Time Series (30min)'] || null;
+      break;
     case '60min':
-      return data['Time Series (60min)'] || null;
+      timeSeriesData = data['Time Series (60min)'] || null;
+      break;
     case 'daily':
-      return data['Time Series (Daily)'] || null;
+      timeSeriesData = data['Time Series (Daily)'] || null;
+      break;
     default:
-      return data['Time Series (5min)'] || null;
+      timeSeriesData = data['Time Series (5min)'] || null;
   }
+
+  // Log debug information for API response
+  if (!timeSeriesData) {
+    console.log('API Response Keys:', Object.keys(data));
+    console.log('Interval requested:', interval);
+  }
+
+  return timeSeriesData;
 }
 
-// 直近の株価データ取得API関数
-async function fetchStockData(symbol: string, interval: IntervalType): Promise<StockData[]> {
+// Function to fetch recent stock data from API
+async function fetchStockData(symbol: string, intervalParam: IntervalType): Promise<StockData[]> {
+  const interval = intervalParam || '1min'; // Set default interval if undefined
+
   try {
-    // API接続試行をログに記録
+    // Log attempt to connect to API
     addLogMessage({
-      text: `${symbol}の株価データ取得を開始...（${interval}間隔）`,
+      text: `${symbol} stock data retrieval started... (${interval} interval)`,
       type: 'info',
       timestamp: new Date()
     });
 
-    // AlphaVantage APIから株価データを取得
+    // Fetch stock data from AlphaVantage API
     const API_KEY = process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY || 'demo';
 
-    // インターバルに応じてAPIエンドポイントを選択
+    // Select API endpoint based on interval
     const functionParam = interval === 'daily' ? 'TIME_SERIES_DAILY' : 'TIME_SERIES_INTRADAY';
     const url = `https://www.alphavantage.co/query?function=${functionParam}&symbol=${symbol}&interval=${interval === 'daily' ? '' : interval}&apikey=${API_KEY}`;
 
     const response = await fetch(url);
 
     if (!response.ok) {
-      throw new Error(`API接続エラー: ${response.status} ${response.statusText}`);
+      throw new Error(`API connection error: ${response.status} ${response.statusText}`);
     }
 
     const data: ApiResponse = await response.json();
 
-    // APIからのエラーレスポンスをチェック
+    // Check for error response from API
     if (data['Error Message']) {
-      throw new Error(`API エラー: ${data['Error Message']}`);
+      throw new Error(`API error: ${data['Error Message']}`);
     }
 
     if (data['Note']) {
-      // API利用制限に達した場合のメッセージ
+      // Message when API usage limit is reached
       addLogMessage({
-        text: `API制限到達: ${data['Note']}`,
+        text: `API usage limit reached: ${data['Note']}`,
         type: 'warning',
         timestamp: new Date()
       });
-      return generateDemoData(symbol, interval); // デモデータを返す
+      return generateDemoData(symbol, interval); // Return demo data instead of throwing an error
     }
 
-    // レスポンスからインターバルに対応するタイムシリーズを取得
+    // Get time series corresponding to interval from response
     const timeSeriesData = getTimeSeriesFromResponse(data, interval);
 
     if (!timeSeriesData) {
-      throw new Error(`タイムシリーズデータが見つかりません（${interval}）`);
+      console.warn(`Time series data not found for interval (${interval}). Falling back to demo data.`);
+      // Return demo data instead of throwing an error
+      return generateDemoData(symbol, interval);
     }
 
-    // JSON応答をStockData配列に変換
+    // Convert JSON response to StockData array
     const stockData: StockData[] = Object.entries(timeSeriesData).map(([timestamp, values]) => ({
       timestamp: new Date(timestamp),
       open: parseFloat(values['1. open']),
@@ -124,9 +139,9 @@ async function fetchStockData(symbol: string, interval: IntervalType): Promise<S
       volume: parseInt(values['5. volume'], 10)
     })).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-    // 成功ログ
+    // Success log
     addLogMessage({
-      text: `${symbol}の株価データを正常に取得（${stockData.length}件、${interval}間隔）`,
+      text: `${symbol} stock data retrieved successfully (${stockData.length} items, ${interval} interval)`,
       type: 'success',
       timestamp: new Date()
     });
@@ -134,25 +149,25 @@ async function fetchStockData(symbol: string, interval: IntervalType): Promise<S
     return stockData;
 
   } catch (error) {
-    // エラーログ
+    // Error log
     addLogMessage({
-      text: `${symbol}のデータ取得エラー: ${error instanceof Error ? error.message : '不明なエラー'}`,
+      text: `${symbol} data retrieval error: ${error instanceof Error ? error.message : 'Unknown error'}`,
       type: 'error',
       timestamp: new Date()
     });
 
     console.error('Stock API error:', error);
-    return generateDemoData(symbol, interval); // エラー時はデモデータを返す
+    return generateDemoData(symbol, interval); // Return demo data in case of error
   }
 }
 
-// APIキーがない場合やエラー時に使用するデモデータ生成関数
+// Function to generate demo data used when there is no API key or in case of error
 function generateDemoData(symbol: string, interval: IntervalType): StockData[] {
   const data: StockData[] = [];
   const now = new Date();
   let basePrice: number;
 
-  // 銘柄ごとにリアルな価格帯を設定
+  // Set realistic price range for each symbol
   switch (symbol) {
     case 'AAPL': basePrice = 175.0; break;
     case 'MSFT': basePrice = 338.0; break;
@@ -164,76 +179,76 @@ function generateDemoData(symbol: string, interval: IntervalType): StockData[] {
     default: basePrice = 100.0;
   }
 
-  // 傾向の設定（上昇、下降、ランダム）
+  // Set trend (up, down, random)
   const trend = Math.random() > 0.5 ? 'up' : Math.random() > 0.5 ? 'down' : 'mixed';
   const trendFactor = trend === 'up' ? 0.01 : trend === 'down' ? -0.01 : 0;
 
-  // ボラティリティの設定
-  const volatility = 0.02; // 2%のボラティリティ
+  // Set volatility
+  const volatility = 0.02; // 2% volatility
 
-  // トレンド生成のための累積要素
+  // Cumulative factor for trend generation
   let cumulativeFactor = 1.0;
 
-  // インターバルに応じてデータ生成量を調整
+  // Adjust data generation amount based on interval
   let intervalMinutes: number;
   let daysToGenerate: number;
 
   switch (interval) {
     case '1min':
       intervalMinutes = 1;
-      daysToGenerate = 7; // 1分間隔なら7日分
+      daysToGenerate = 7; // 1 minute interval means 7 days
       break;
     case '5min':
       intervalMinutes = 5;
-      daysToGenerate = 30; // 5分間隔なら30日分
+      daysToGenerate = 30; // 5 minute interval means 30 days
       break;
     case '15min':
       intervalMinutes = 15;
-      daysToGenerate = 60; // 15分間隔なら60日分
+      daysToGenerate = 60; // 15 minute interval means 60 days
       break;
     case '30min':
       intervalMinutes = 30;
-      daysToGenerate = 90; // 30分間隔なら90日分
+      daysToGenerate = 90; // 30 minute interval means 90 days
       break;
     case '60min':
       intervalMinutes = 60;
-      daysToGenerate = 120; // 60分間隔なら120日分
+      daysToGenerate = 120; // 60 minute interval means 120 days
       break;
     case 'daily':
       intervalMinutes = 24 * 60;
-      daysToGenerate = 365; // 日次なら365日分
+      daysToGenerate = 365; // Daily means 365 days
       break;
     default:
       intervalMinutes = 5;
       daysToGenerate = 30;
   }
 
-  // 1日あたりのインターバル数
+  // Number of intervals per day
   const intervalsPerDay = 24 * 60 / intervalMinutes;
-  const totalIntervals = Math.min(daysToGenerate * intervalsPerDay, 5000); // 上限を設ける
+  const totalIntervals = Math.min(daysToGenerate * intervalsPerDay, 5000); // Set upper limit
 
   for (let i = 0; i < totalIntervals; i++) {
-    // 時間をさかのぼる
+    // Go back in time
     const timestamp = new Date(now.getTime() - (i * intervalMinutes * 60 * 1000));
 
-    // トレンドに基づく価格変動
-    if (i % intervalsPerDay === 0) { // 1日ごとに傾向を少し加速
+    // Price fluctuation based on trend
+    if (i % intervalsPerDay === 0) { // Slightly accelerate trend every day
       cumulativeFactor *= (1 + (Math.random() * 0.01 * (trend === 'mixed' ? (Math.random() > 0.5 ? 1 : -1) : 1)));
     }
 
-    // ランダム要素と傾向を組み合わせて価格を計算
+    // Calculate price by combining random element and trend
     const randomWalk = (Math.random() * 2 - 1) * volatility;
     const price = basePrice * cumulativeFactor * (1 + randomWalk + (i / totalIntervals) * trendFactor);
 
-    // 少し価格を変動させて高値・安値を生成
+    // Slightly fluctuate price to generate high and low
     const high = price * (1 + Math.random() * 0.01);
     const low = price * (1 - Math.random() * 0.01);
     const open = low + Math.random() * (high - low);
     const close = low + Math.random() * (high - low);
 
-    // ボリュームもランダムに生成（傾向に影響される）
+    // Randomly generate volume (affected by trend)
     const volumeBase = 100000 + Math.random() * 900000;
-    const volume = Math.floor(volumeBase * (1 + Math.abs(randomWalk) * 2)); // 価格変動が大きいほどボリュームも大きい
+    const volume = Math.floor(volumeBase * (1 + Math.abs(randomWalk) * 2)); // Higher volume when price fluctuation is large
 
     data.push({
       timestamp,
@@ -245,16 +260,21 @@ function generateDemoData(symbol: string, interval: IntervalType): StockData[] {
     });
   }
 
-  // 日付順（古い順）で並べ替え
-  return data.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  // Sort by date (oldest first)
+  return data.sort((a, b) => {
+    // Ensure timestamp is Date type
+    const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
+    const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
+    return aTime - bTime;
+  });
 }
 
-// カスタムフック
+// Custom hook
 export function useStockData(symbol: string) {
   const [stockData, setStockData] = useState<StockData[] | null>(null);
-  const { interval } = useInterval(); // コンテキストからインターバルを取得
+  const { interval } = useInterval(); // Get interval from context
 
-  // 定期的なデータ取得
+  // Fetch data periodically
   const fetchData = useCallback(async () => {
     try {
       const data = await fetchStockData(symbol, interval);
@@ -265,7 +285,7 @@ export function useStockData(symbol: string) {
     }
   }, [symbol, interval]);
 
-  // 初期データロードと定期更新
+  // Initial data load and periodic update
   useEffect(() => {
     let isMounted = true;
 
@@ -276,8 +296,8 @@ export function useStockData(symbol: string) {
 
     getStockData();
 
-    // インターバルに基づいて更新頻度を決定
-    let updateInterval = 60000; // デフォルトは1分
+    // Determine update frequency based on interval
+    let updateInterval = 60000; // Default is 1 minute
     switch (interval) {
       case '1min': updateInterval = 60 * 1000; break;
       case '5min': updateInterval = 5 * 60 * 1000; break;
@@ -287,7 +307,7 @@ export function useStockData(symbol: string) {
       case 'daily': updateInterval = 24 * 60 * 60 * 1000; break;
     }
 
-    // データ更新タイマー
+    // Data update timer
     const timer = setInterval(getStockData, updateInterval);
 
     return () => {
