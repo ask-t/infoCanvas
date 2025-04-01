@@ -212,11 +212,11 @@ function App() {
         />
       ) : (
         <div className="pt-40 pb-16 px-4">
-          <Dashboard
+          {/* <Dashboard
             stockDataBySymbol={stockDataBySymbol}
             onOpenChart={handleOpenChart}
             addLogMessage={addLogMessage}
-          />
+          /> */}
         </div>
       )}
 
