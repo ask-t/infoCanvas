@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { StockData } from '@/types/stock';
 import { LogMessage } from '@/hooks/useLogMessages';
-import { useStockData } from '@/hooks/useStockData';
+import { useStockData, ExtendedIntervalType } from '@/hooks/useStockData';
 import {
   ComposedChart,
   Line,
@@ -51,6 +51,12 @@ interface CustomTooltipProps {
   label?: string;
 }
 
+// Time frame options
+type TimeFrame = 'day' | 'week' | 'month';
+
+// API rate limit note
+const API_RATE_LIMIT_NOTE = "Note: Alpha Vantage API has a limit of 25 requests per day. Demo data will be displayed when the limit is reached.";
+
 const ChartOverlay: React.FC<ChartOverlayProps> = ({
   symbol,
   onClose,
@@ -58,12 +64,23 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [chartTimeframe, setChartTimeframe] = useState<'day' | 'week' | 'month'>('day');
+  const [chartTimeframe, setChartTimeframe] = useState<TimeFrame>('day');
   const [showMA, setShowMA] = useState<boolean>(true);
   const [showVolume, setShowVolume] = useState<boolean>(true);
+  const [isUsingDemoData, setIsUsingDemoData] = useState<boolean>(false);
 
-  // useStockData hook to get data
-  const stockData = useStockData(symbol);
+  // Map chart timeframe to API parameter
+  const timeframeParam = useMemo<ExtendedIntervalType>(() => {
+    switch (chartTimeframe) {
+      case 'day': return '60min'; // Use 60min for daily view
+      case 'week': return 'weekly';
+      case 'month': return 'monthly';
+      default: return '60min';
+    }
+  }, [chartTimeframe]);
+
+  // Get stock data using the appropriate API endpoint
+  const stockData = useStockData(symbol, timeframeParam);
 
   // Function to add log message
   const logMessage = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
@@ -82,14 +99,14 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
       const timeframeText = chartTimeframe === 'day' ? '1 day' : chartTimeframe === 'week' ? '1 week' : '1 month';
       logMessage(`Changed chart display period to ${timeframeText} for ${symbol}`, 'info');
     }
-  }, [chartTimeframe, symbol, stockData]);
+  }, [chartTimeframe, symbol, stockData, logMessage]);
 
   useEffect(() => {
     if (stockData) {
       setLoading(false);
-      logMessage(`Successfully loaded chart data for ${symbol}`, 'success');
+      logMessage(`Successfully loaded ${chartTimeframe} chart data for ${symbol}`, 'success');
     }
-  }, [stockData, symbol]);
+  }, [stockData, symbol, chartTimeframe, logMessage]);
 
   // Error handling if no chart data
   useEffect(() => {
@@ -99,37 +116,34 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     } else {
       setError(null);
     }
-  }, [loading, stockData, symbol]);
+  }, [loading, stockData, symbol, logMessage]);
 
-  // Filter data based on selected period
-  const getFilteredData = (): StockData[] => {
-    if (!stockData || stockData.length === 0) return [];
+  // Effect to detect demo data
+  useEffect(() => {
+    if (stockData && stockData.length >= 3) {
+      // Check if timestamps are too regular (a sign of demo data)
+      const ts0 = stockData[0].timestamp instanceof Date
+        ? stockData[0].timestamp.getTime()
+        : new Date(stockData[0].timestamp as string | number).getTime();
 
-    const now = new Date();
-    let cutoffDate: Date;
+      const ts1 = stockData[1].timestamp instanceof Date
+        ? stockData[1].timestamp.getTime()
+        : new Date(stockData[1].timestamp as string | number).getTime();
 
-    switch (chartTimeframe) {
-      case 'day':
-        cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
-        break;
-      case 'week':
-        cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // 1 week ago
-        break;
-      case 'month':
-      default:
-        cutoffDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
-        break;
+      const ts2 = stockData[2].timestamp instanceof Date
+        ? stockData[2].timestamp.getTime()
+        : new Date(stockData[2].timestamp as string | number).getTime();
+
+      const interval1 = ts1 - ts0;
+      const interval2 = ts2 - ts1;
+
+      // If intervals are within 1 second of each other, it's likely demo data
+      setIsUsingDemoData(Math.abs(interval2 - interval1) < 1000);
     }
-
-    // Filter data
-    const filtered = stockData.filter(data => new Date(data.timestamp as string | number | Date) >= cutoffDate);
-
-    // Ensure at least 5 data points (display all data if insufficient)
-    return filtered.length >= 5 ? filtered : stockData;
-  };
+  }, [stockData]);
 
   // Calculate moving averages and prepare data
-  const prepareChartData = (data: StockData[]): ProcessedStockData[] => {
+  const prepareChartData = useCallback((data: StockData[]): ProcessedStockData[] => {
     if (!data || data.length === 0) return [];
 
     // Calculate 5-day Moving Average (MA5) and 20-day Moving Average (MA20)
@@ -148,12 +162,13 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
         ma20 = last20.reduce((sum, item) => sum + item.close, 0) / 20;
       }
 
-      // Format date for display
+      // Format date for display based on timeframe
       const dateStr = new Date(item.timestamp as string | number | Date).toLocaleString('en-US', {
         month: 'short',
         day: 'numeric',
         hour: chartTimeframe === 'day' ? '2-digit' : undefined,
-        minute: chartTimeframe === 'day' ? '2-digit' : undefined
+        minute: chartTimeframe === 'day' ? '2-digit' : undefined,
+        year: chartTimeframe === 'month' ? '2-digit' : undefined
       });
 
       // Calculate price change colors
@@ -172,13 +187,18 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     });
 
     return withMovingAverages;
-  };
+  }, [chartTimeframe]);
 
   // Memoize processed data to prevent recalculation on each render
   const processedData = useMemo(() => {
-    const filteredData = getFilteredData();
-    return prepareChartData(filteredData);
-  }, [stockData, chartTimeframe]);
+    return prepareChartData(stockData || []);
+  }, [stockData, chartTimeframe, prepareChartData]);
+
+  // Handle timeframe change
+  const handleTimeframeChange = (timeframe: TimeFrame) => {
+    setLoading(true);
+    setChartTimeframe(timeframe);
+  };
 
   // Custom tooltip component
   const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
@@ -229,238 +249,209 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     return null;
   };
 
-  // Render chart
-  const renderChart = () => {
-    if (loading) {
-      return (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading chart data...</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (error) {
-      return (
-        <div className="flex items-center justify-center h-full">
-          <div className="text-center text-red-500">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="mt-4">{error}</p>
-          </div>
-        </div>
-      );
-    }
-
-    if (processedData.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-full text-gray-500">
-          No data found for the selected period
-        </div>
-      );
-    }
-
-    // Calculate price change for market summary
-    const firstClose = processedData[0]?.close || 0;
-    const lastClose = processedData[processedData.length - 1]?.close || 0;
-    const priceChange = lastClose - firstClose;
-    const percentChange = ((priceChange / firstClose) * 100).toFixed(2);
-    const isPositive = priceChange >= 0;
-
-    // Calculate statistics
-    const highPrice = Math.max(...processedData.map(d => d.high ?? d.close));
-    const lowPrice = Math.min(...processedData.map(d => d.low ?? d.close));
-    const avgVolume = processedData.reduce((sum, d) => sum + (d.volume ?? 0), 0) / processedData.length;
-
-    return (
-      <div className="h-full flex flex-col">
-        {/* Market Summary */}
-        <div className="mb-4 flex justify-between items-center">
-          <div>
-            <div className="text-3xl font-bold">${lastClose.toFixed(2)}</div>
-            <div className={`text-sm ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-              {isPositive ? '↑' : '↓'} ${Math.abs(priceChange).toFixed(2)} ({isPositive ? '+' : ''}{percentChange}%)
-            </div>
-          </div>
-          <div className="text-right text-gray-500 text-sm">
-            <div>High: ${highPrice.toFixed(2)}</div>
-            <div>Low: ${lowPrice.toFixed(2)}</div>
-            <div>Avg Vol: {(avgVolume / 1000000).toFixed(2)}M</div>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="mb-4 flex flex-wrap justify-between items-center">
-          <div className="flex space-x-2 mb-2 sm:mb-0">
-            <button
-              onClick={() => setShowMA(!showMA)}
-              className={`px-3 py-1 text-xs rounded ${showMA ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
-            >
-              Moving Averages
-            </button>
-            <button
-              onClick={() => setShowVolume(!showVolume)}
-              className={`px-3 py-1 text-xs rounded ${showVolume ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
-            >
-              Volume
-            </button>
-          </div>
-        </div>
-
-        {/* Advanced Chart */}
-        <div className="flex-1">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart
-              data={processedData}
-              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-              <XAxis
-                dataKey="dateStr"
-                tick={{ fontSize: 10 }}
-                tickCount={5}
-              />
-              <YAxis
-                yAxisId="price"
-                domain={['auto', 'auto']}
-                orientation="right"
-                tickFormatter={(value) => `$${value.toFixed(0)}`}
-              />
-              {showVolume && (
-                <YAxis
-                  yAxisId="volume"
-                  orientation="left"
-                  tickFormatter={(value) => `${(value / 1000000).toFixed(0)}M`}
-                  domain={[0, 'dataMax']}
-                />
-              )}
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-
-              {/* Price Candlestick representation using scatter & reference line */}
-              {processedData.map((entry, index) => (
-                <React.Fragment key={index}>
-                  {/* Vertical line from low to high */}
-                  <ReferenceLine
-                    yAxisId="price"
-                    segment={[
-                      { x: entry.dateStr, y: entry.low ?? entry.close },
-                      { x: entry.dateStr, y: entry.high ?? entry.close }
-                    ]}
-                    stroke={entry.changeColor}
-                    strokeWidth={1}
-                    ifOverflow="extendDomain"
-                  />
-                </React.Fragment>
-              ))}
-
-              {/* Close price line */}
-              <Line
-                yAxisId="price"
-                type="monotone"
-                dataKey="close"
-                stroke="#0369a1"
-                strokeWidth={1.5}
-                dot={false}
-                name="Close Price"
-              />
-
-              {/* Moving Averages */}
-              {showMA && (
-                <>
-                  <Line
-                    yAxisId="price"
-                    type="monotone"
-                    dataKey="ma5"
-                    stroke="#3b82f6"
-                    strokeWidth={1}
-                    dot={false}
-                    name="MA5"
-                  />
-                  <Line
-                    yAxisId="price"
-                    type="monotone"
-                    dataKey="ma20"
-                    stroke="#a855f7"
-                    strokeWidth={1}
-                    dot={false}
-                    name="MA20"
-                  />
-                </>
-              )}
-
-              {/* Volume bars */}
-              {showVolume && (
-                <Bar
-                  yAxisId="volume"
-                  dataKey="volume"
-                  name="Volume"
-                  barSize={5}
-                  opacity={0.5}
-                  fill="#6b7280"
-                />
-              )}
-
-              {/* Brush for zoom/pan */}
-              <Brush
-                dataKey="dateStr"
-                height={20}
-                stroke="#8884d8"
-                startIndex={Math.max(0, processedData.length - Math.min(20, processedData.length))}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    );
-  };
-
-  // Get company name
-  const companyName = companyNames[symbol] || symbol;
-
   return (
-    <div className="fixed inset-0 z-40 bg-black bg-opacity-80 flex items-center justify-center">
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold dark:text-white">
-            {symbol} <span className="text-gray-500 text-base font-normal">({companyName})</span>
-          </h2>
-          <div className="flex space-x-2">
-            <div className="flex rounded-lg border overflow-hidden">
-              <button
-                onClick={() => setChartTimeframe('day')}
-                className={`px-3 py-1 text-sm ${chartTimeframe === 'day' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
-              >
-                1 day
-              </button>
-              <button
-                onClick={() => setChartTimeframe('week')}
-                className={`px-3 py-1 text-sm ${chartTimeframe === 'week' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
-              >
-                1 week
-              </button>
-              <button
-                onClick={() => setChartTimeframe('month')}
-                className={`px-3 py-1 text-sm ${chartTimeframe === 'month' ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
-              >
-                1 month
-              </button>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800 dark:text-white">
+              {companyNames[symbol] || symbol}
+              {isUsingDemoData && (
+                <span className="ml-2 text-xs font-normal text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900 px-2 py-0.5 rounded-full">
+                  Demo Data
+                </span>
+              )}
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {symbol} • {chartTimeframe === 'day' ? '1 Day' : chartTimeframe === 'week' ? '1 Week' : '1 Month'} Chart
+            </p>
           </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
-        <div className="h-96 bg-white dark:bg-gray-800 rounded-lg">
-          {renderChart()}
+
+        {isUsingDemoData && (
+          <div className="px-4 py-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 text-xs">
+            <p>{API_RATE_LIMIT_NOTE}</p>
+          </div>
+        )}
+
+        <div className="flex space-x-2 p-3 border-b border-gray-200 dark:border-gray-700">
+          <button
+            onClick={() => handleTimeframeChange('day')}
+            className={`px-3 py-1 rounded text-sm font-medium ${chartTimeframe === 'day'
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+          >
+            1 Day
+          </button>
+          <button
+            onClick={() => handleTimeframeChange('week')}
+            className={`px-3 py-1 rounded text-sm font-medium ${chartTimeframe === 'week'
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+          >
+            1 Week
+          </button>
+          <button
+            onClick={() => handleTimeframeChange('month')}
+            className={`px-3 py-1 rounded text-sm font-medium ${chartTimeframe === 'month'
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+          >
+            1 Month
+          </button>
+
+          <div className="border-l border-gray-300 dark:border-gray-700 mx-2" />
+
+          <button
+            onClick={() => setShowMA(!showMA)}
+            className={`px-3 py-1 rounded text-sm font-medium ${showMA
+              ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+          >
+            Show MA
+          </button>
+
+          <button
+            onClick={() => setShowVolume(!showVolume)}
+            className={`px-3 py-1 rounded text-sm font-medium ${showVolume
+              ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+              }`}
+          >
+            Show Volume
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4">
+          {loading ? (
+            <div className="flex justify-center items-center h-96">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+            </div>
+          ) : error ? (
+            <div className="flex justify-center items-center h-96">
+              <div className="text-red-500 text-center">
+                <svg className="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
+                </svg>
+                <p className="text-xl font-bold">{error}</p>
+                <p className="text-gray-600 dark:text-gray-400 mt-2">
+                  Please try another symbol or timeframe.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="h-[500px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={processedData}
+                  margin={{
+                    top: 20,
+                    right: 30,
+                    left: 20,
+                    bottom: 60,
+                  }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.7} />
+                  <XAxis
+                    dataKey="dateStr"
+                    tick={{ fontSize: 12 }}
+                    tickMargin={10}
+                    minTickGap={10}
+                  />
+                  <YAxis
+                    yAxisId="price"
+                    domain={['auto', 'auto']}
+                    tick={{ fontSize: 12 }}
+                    tickMargin={10}
+                    tickFormatter={(value) => `$${value.toFixed(0)}`}
+                  />
+                  {showVolume && (
+                    <YAxis
+                      yAxisId="volume"
+                      orientation="right"
+                      tick={{ fontSize: 12 }}
+                      tickMargin={10}
+                      tickFormatter={(value) => `${(value / 1000000).toFixed(0)}M`}
+                    />
+                  )}
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend />
+                  <ReferenceLine y={0} stroke="#666" yAxisId="price" />
+
+                  {/* Price chart */}
+                  <Line
+                    type="monotone"
+                    dataKey="close"
+                    stroke="#0369a1"
+                    strokeWidth={2}
+                    dot={false}
+                    yAxisId="price"
+                    name="Price"
+                  />
+
+                  {/* Volume bars */}
+                  {showVolume && (
+                    <Bar
+                      dataKey="volume"
+                      yAxisId="volume"
+                      fill="#64748b"
+                      opacity={0.4}
+                      name="Volume"
+                    />
+                  )}
+
+                  {/* Moving Averages */}
+                  {showMA && (
+                    <>
+                      <Line
+                        type="monotone"
+                        dataKey="ma5"
+                        stroke="#3b82f6"
+                        dot={false}
+                        yAxisId="price"
+                        name="MA5"
+                        strokeWidth={1.5}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="ma20"
+                        stroke="#8b5cf6"
+                        dot={false}
+                        yAxisId="price"
+                        name="MA20"
+                        strokeWidth={1.5}
+                      />
+                    </>
+                  )}
+
+                  {/* Brush for zooming/scrolling */}
+                  <Brush
+                    dataKey="dateStr"
+                    height={30}
+                    stroke="#8884d8"
+                    startIndex={Math.max(0, processedData.length - 20)}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </div>
     </div>

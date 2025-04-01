@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { StockData } from '@/types/stock';
 import { LogMessage } from './useLogMessages';
 import { useInterval, IntervalType } from '@/contexts/IntervalContext';
@@ -17,8 +17,8 @@ interface ApiResponse {
     '1. Information': string;
     '2. Symbol': string;
     '3. Last Refreshed': string;
-    '4. Interval': string;
-    '5. Output Size': string;
+    '4. Interval'?: string;
+    '5. Output Size'?: string;
     '6. Time Zone': string;
   };
   'Time Series (5min)'?: Record<string, TimeSeriesValue>;
@@ -27,9 +27,14 @@ interface ApiResponse {
   'Time Series (30min)'?: Record<string, TimeSeriesValue>;
   'Time Series (60min)'?: Record<string, TimeSeriesValue>;
   'Time Series (Daily)'?: Record<string, TimeSeriesValue>;
+  'Weekly Time Series'?: Record<string, TimeSeriesValue>;
+  'Monthly Time Series'?: Record<string, TimeSeriesValue>;
   'Error Message'?: string;
   'Note'?: string;
 }
+
+// Extended interval type to include weekly and monthly
+export type ExtendedIntervalType = IntervalType | 'weekly' | 'monthly';
 
 // Function to set a global logging handler
 let globalLogHandler: ((message: LogMessage) => void) | null = null;
@@ -43,7 +48,7 @@ function addLogMessage(message: LogMessage) {
 }
 
 // Function to get time series data from API response
-function getTimeSeriesFromResponse(data: ApiResponse, interval: IntervalType): Record<string, TimeSeriesValue> | null {
+function getTimeSeriesFromResponse(data: ApiResponse, interval: ExtendedIntervalType): Record<string, TimeSeriesValue> | null {
   let timeSeriesData = null;
 
   switch (interval) {
@@ -65,6 +70,12 @@ function getTimeSeriesFromResponse(data: ApiResponse, interval: IntervalType): R
     case 'daily':
       timeSeriesData = data['Time Series (Daily)'] || null;
       break;
+    case 'weekly':
+      timeSeriesData = data['Weekly Time Series'] || null;
+      break;
+    case 'monthly':
+      timeSeriesData = data['Monthly Time Series'] || null;
+      break;
     default:
       timeSeriesData = data['Time Series (5min)'] || null;
   }
@@ -78,8 +89,22 @@ function getTimeSeriesFromResponse(data: ApiResponse, interval: IntervalType): R
   return timeSeriesData;
 }
 
+// Function to get API function name based on interval
+function getApiFunctionName(interval: ExtendedIntervalType): string {
+  switch (interval) {
+    case 'weekly':
+      return 'TIME_SERIES_WEEKLY';
+    case 'monthly':
+      return 'TIME_SERIES_MONTHLY';
+    case 'daily':
+      return 'TIME_SERIES_DAILY';
+    default:
+      return 'TIME_SERIES_INTRADAY';
+  }
+}
+
 // Function to fetch recent stock data from API
-async function fetchStockData(symbol: string, intervalParam: IntervalType): Promise<StockData[]> {
+async function fetchStockData(symbol: string, intervalParam: ExtendedIntervalType): Promise<StockData[]> {
   const interval = intervalParam || '1min'; // Set default interval if undefined
 
   try {
@@ -94,59 +119,99 @@ async function fetchStockData(symbol: string, intervalParam: IntervalType): Prom
     const API_KEY = process.env.NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY || 'demo';
 
     // Select API endpoint based on interval
-    const functionParam = interval === 'daily' ? 'TIME_SERIES_DAILY' : 'TIME_SERIES_INTRADAY';
-    const url = `https://www.alphavantage.co/query?function=${functionParam}&symbol=${symbol}&interval=${interval === 'daily' ? '' : interval}&apikey=${API_KEY}`;
+    const functionParam = getApiFunctionName(interval);
+    let url = `https://www.alphavantage.co/query?function=${functionParam}&symbol=${symbol}&apikey=${API_KEY}`;
 
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`API connection error: ${response.status} ${response.statusText}`);
+    // Add interval parameter only for intraday data
+    if (functionParam === 'TIME_SERIES_INTRADAY') {
+      url += `&interval=${interval}`;
     }
 
-    const data: ApiResponse = await response.json();
+    console.log(`Fetching data from: ${url.replace(API_KEY, 'API_KEY_HIDDEN')}`);
 
-    // Check for error response from API
-    if (data['Error Message']) {
-      throw new Error(`API error: ${data['Error Message']}`);
-    }
+    // Add timeout and abort controller for better error handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-    if (data['Note']) {
-      // Message when API usage limit is reached
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`API connection error: ${response.status} ${response.statusText}`);
+      }
+
+      const data: ApiResponse = await response.json();
+
+      // Check for error response from API
+      if (data['Error Message']) {
+        throw new Error(`API error: ${data['Error Message']}`);
+      }
+
+      if (data['Note']) {
+        // Message when API usage limit is reached
+        addLogMessage({
+          text: `API usage limit reached: ${data['Note']}`,
+          type: 'warning',
+          timestamp: new Date()
+        });
+        return generateDemoData(symbol, interval); // Return demo data instead of throwing an error
+      }
+
+      // Get time series corresponding to interval from response
+      const timeSeriesData = getTimeSeriesFromResponse(data, interval);
+
+      if (!timeSeriesData) {
+        console.warn(`Time series data not found for interval (${interval}). Falling back to demo data.`, data);
+        // Return demo data instead of throwing an error
+        return generateDemoData(symbol, interval);
+      }
+
+      // Convert JSON response to StockData array
+      const stockData: StockData[] = Object.entries(timeSeriesData).map(([timestamp, values]) => ({
+        timestamp: new Date(timestamp),
+        open: parseFloat(values['1. open']),
+        high: parseFloat(values['2. high']),
+        low: parseFloat(values['3. low']),
+        close: parseFloat(values['4. close']),
+        volume: parseInt(values['5. volume'], 10)
+      })).sort((a, b) => {
+        const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp as string | number | Date).getTime();
+        const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp as string | number | Date).getTime();
+        return aTime - bTime;
+      });
+
+      // Success log
       addLogMessage({
-        text: `API usage limit reached: ${data['Note']}`,
-        type: 'warning',
+        text: `${symbol} stock data retrieved successfully (${stockData.length} items, ${interval} interval)`,
+        type: 'success',
         timestamp: new Date()
       });
-      return generateDemoData(symbol, interval); // Return demo data instead of throwing an error
+
+      return stockData;
+
+    } catch (fetchError) {
+      // Handle AbortController errors
+      if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
+        addLogMessage({
+          text: `${symbol} data retrieval timeout after 10 seconds.`,
+          type: 'error',
+          timestamp: new Date()
+        });
+        console.warn('API request timed out after 10 seconds, falling back to demo data.');
+      } else {
+        console.error('Fetch error:', fetchError);
+      }
+      throw fetchError; // Rethrow to be caught by the outer try/catch
     }
-
-    // Get time series corresponding to interval from response
-    const timeSeriesData = getTimeSeriesFromResponse(data, interval);
-
-    if (!timeSeriesData) {
-      console.warn(`Time series data not found for interval (${interval}). Falling back to demo data.`);
-      // Return demo data instead of throwing an error
-      return generateDemoData(symbol, interval);
-    }
-
-    // Convert JSON response to StockData array
-    const stockData: StockData[] = Object.entries(timeSeriesData).map(([timestamp, values]) => ({
-      timestamp: new Date(timestamp),
-      open: parseFloat(values['1. open']),
-      high: parseFloat(values['2. high']),
-      low: parseFloat(values['3. low']),
-      close: parseFloat(values['4. close']),
-      volume: parseInt(values['5. volume'], 10)
-    })).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-
-    // Success log
-    addLogMessage({
-      text: `${symbol} stock data retrieved successfully (${stockData.length} items, ${interval} interval)`,
-      type: 'success',
-      timestamp: new Date()
-    });
-
-    return stockData;
 
   } catch (error) {
     // Error log
@@ -156,13 +221,13 @@ async function fetchStockData(symbol: string, intervalParam: IntervalType): Prom
       timestamp: new Date()
     });
 
-    console.error('Stock API error:', error);
+    console.warn('Stock API error - Generating demo data instead.', error);
     return generateDemoData(symbol, interval); // Return demo data in case of error
   }
 }
 
 // Function to generate demo data used when there is no API key or in case of error
-function generateDemoData(symbol: string, interval: IntervalType): StockData[] {
+function generateDemoData(symbol: string, interval: ExtendedIntervalType): StockData[] {
   const data: StockData[] = [];
   const now = new Date();
   let basePrice: number;
@@ -218,6 +283,14 @@ function generateDemoData(symbol: string, interval: IntervalType): StockData[] {
       intervalMinutes = 24 * 60;
       daysToGenerate = 365; // Daily means 365 days
       break;
+    case 'weekly':
+      intervalMinutes = 7 * 24 * 60;
+      daysToGenerate = 520; // Weekly means 10 years (520 weeks)
+      break;
+    case 'monthly':
+      intervalMinutes = 30 * 24 * 60;
+      daysToGenerate = 240; // Monthly means 20 years (240 months)
+      break;
     default:
       intervalMinutes = 5;
       daysToGenerate = 30;
@@ -248,73 +321,266 @@ function generateDemoData(symbol: string, interval: IntervalType): StockData[] {
 
     // Randomly generate volume (affected by trend)
     const volumeBase = 100000 + Math.random() * 900000;
-    const volume = Math.floor(volumeBase * (1 + Math.abs(randomWalk) * 2)); // Higher volume when price fluctuation is large
+    // Higher volume on trend days
+    const volume = Math.round(volumeBase * (1 + Math.abs(randomWalk) * 5));
 
     data.push({
       timestamp,
-      open: parseFloat(open.toFixed(2)),
-      high: parseFloat(high.toFixed(2)),
-      low: parseFloat(low.toFixed(2)),
-      close: parseFloat(close.toFixed(2)),
+      open,
+      high,
+      low,
+      close,
       volume
     });
   }
 
-  // Sort by date (oldest first)
   return data.sort((a, b) => {
-    // Ensure timestamp is Date type
-    const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
-    const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
+    const aTime = a.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a.timestamp as string | number | Date).getTime();
+    const bTime = b.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b.timestamp as string | number | Date).getTime();
     return aTime - bTime;
   });
 }
 
 // Custom hook
-export function useStockData(symbol: string) {
+export function useStockData(symbol: string, interval?: ExtendedIntervalType) {
   const [stockData, setStockData] = useState<StockData[] | null>(null);
-  const { interval } = useInterval(); // Get interval from context
+  const [isUsingDemoData, setIsUsingDemoData] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [retryCount, setRetryCount] = useState<number>(0);
+  const [lastFetchParams, setLastFetchParams] = useState<string>('');
+  const [fetchTimestamp, setFetchTimestamp] = useState<number>(0);
+  const { interval: contextInterval } = useInterval(); // Get interval from context
+  const effectiveInterval = interval || contextInterval; // Use provided interval or default from context
+
+  // Simple in-memory cache for API responses - persistent across renders
+  const apiCache = useMemo(() => new Map<string, { data: StockData[], timestamp: number }>(), []);
+
+  // Check if we need to fetch new data
+  const shouldFetchNewData = useCallback((symbol: string, interval: ExtendedIntervalType) => {
+    const cacheKey = `${symbol}-${interval}`;
+    const now = Date.now();
+
+    // Don't fetch if we're already using demo data and have retried 3+ times
+    if (isUsingDemoData && retryCount >= 2) {
+      return false;
+    }
+
+    // Check if params changed
+    if (lastFetchParams !== cacheKey) {
+      console.log(`Parameters changed from ${lastFetchParams} to ${cacheKey}, forcing fetch`);
+      setLastFetchParams(cacheKey);
+      setRetryCount(0);
+      return true;
+    }
+
+    // Prevent fetching too frequently (at least 5 minutes between manual fetches)
+    const minTimeBetweenFetches = 5 * 60 * 1000; // 5 minutes
+    if (now - fetchTimestamp < minTimeBetweenFetches) {
+      console.log(`Recent fetch detected ${(now - fetchTimestamp) / 1000}s ago, using cached/existing data`);
+      return false;
+    }
+
+    // Check cache
+    if (apiCache.has(cacheKey)) {
+      const cached = apiCache.get(cacheKey)!;
+
+      // Determine if cache is fresh enough based on interval
+      let cacheMaxAge = 15 * 60 * 1000; // 15 minutes default
+
+      switch (interval) {
+        case '1min': cacheMaxAge = 5 * 60 * 1000; break; // 5 minutes
+        case '5min': cacheMaxAge = 15 * 60 * 1000; break; // 15 minutes
+        case '15min':
+        case '30min':
+        case '60min': cacheMaxAge = 60 * 60 * 1000; break; // 1 hour
+        case 'daily': cacheMaxAge = 24 * 60 * 60 * 1000; break; // 1 day
+        case 'weekly': cacheMaxAge = 7 * 24 * 60 * 60 * 1000; break; // 1 week
+        case 'monthly': cacheMaxAge = 30 * 24 * 60 * 60 * 1000; break; // 1 month
+      }
+
+      if (now - cached.timestamp < cacheMaxAge) {
+        console.log(`Cache hit for ${cacheKey}, age: ${(now - cached.timestamp) / 1000}s, max age: ${cacheMaxAge / 1000}s`);
+        return false;
+      }
+
+      console.log(`Cache expired for ${cacheKey}, age: ${(now - cached.timestamp) / 1000}s, max age: ${cacheMaxAge / 1000}s`);
+    }
+
+    return true;
+  }, [apiCache, isUsingDemoData, lastFetchParams, retryCount, fetchTimestamp]);
 
   // Fetch data periodically
   const fetchData = useCallback(async () => {
+    const cacheKey = `${symbol}-${effectiveInterval}`;
+    const now = Date.now();
+
+    // Check if we have this data cached
+    if (apiCache.has(cacheKey)) {
+      const cached = apiCache.get(cacheKey)!;
+      setStockData(cached.data);
+
+      // Set demo data flag if cache is demo data
+      const data = cached.data;
+      if (data.length >= 3) {
+        const timestamp0 = data[0].timestamp instanceof Date
+          ? data[0].timestamp.getTime()
+          : new Date(data[0].timestamp as string | number).getTime();
+
+        const timestamp1 = data[1].timestamp instanceof Date
+          ? data[1].timestamp.getTime()
+          : new Date(data[1].timestamp as string | number).getTime();
+
+        const timestamp2 = data[2].timestamp instanceof Date
+          ? data[2].timestamp.getTime()
+          : new Date(data[2].timestamp as string | number).getTime();
+
+        const timeRegularity = Math.abs(
+          (timestamp2 - timestamp1) - (timestamp1 - timestamp0)
+        );
+        setIsUsingDemoData(timeRegularity < 100); // If very regular (less than 100ms difference), it's likely demo data
+      }
+
+      setLoading(false);
+      return;
+    }
+
+    // Check if we should fetch or limit API calls
+    if (!shouldFetchNewData(symbol, effectiveInterval)) {
+      if (!stockData) {
+        // Generate demo data if we have no data at all
+        const demoData = generateDemoData(symbol, effectiveInterval);
+        setStockData(demoData);
+        setIsUsingDemoData(true);
+
+        // Cache demo data
+        apiCache.set(cacheKey, { data: demoData, timestamp: now });
+      }
+      setLoading(false);
+      return;
+    }
+
     try {
-      const data = await fetchStockData(symbol, interval);
+      setRetryCount(prev => prev + 1);
+      setFetchTimestamp(now);
+
+      // Log that we're attempting a fetch
+      addLogMessage({
+        text: `Fetching ${symbol} data with ${effectiveInterval} interval (attempt ${retryCount + 1})`,
+        type: 'info',
+        timestamp: new Date()
+      });
+
+      const data = await fetchStockData(symbol, effectiveInterval);
       setStockData(data);
+
+      // Cache successful responses
+      apiCache.set(cacheKey, { data, timestamp: now });
+
+      // Check if we're using demo data by inspecting timestamp pattern
+      // Demo data has very regular timestamp intervals
+      if (data.length >= 3) {
+        const timestamp0 = data[0].timestamp instanceof Date
+          ? data[0].timestamp.getTime()
+          : new Date(data[0].timestamp as string | number).getTime();
+
+        const timestamp1 = data[1].timestamp instanceof Date
+          ? data[1].timestamp.getTime()
+          : new Date(data[1].timestamp as string | number).getTime();
+
+        const timestamp2 = data[2].timestamp instanceof Date
+          ? data[2].timestamp.getTime()
+          : new Date(data[2].timestamp as string | number).getTime();
+
+        const timeRegularity = Math.abs(
+          (timestamp2 - timestamp1) - (timestamp1 - timestamp0)
+        );
+        setIsUsingDemoData(timeRegularity < 100); // If very regular (less than 100ms difference), it's likely demo data
+      }
     } catch (error) {
       console.error(`Error fetching stock data for ${symbol}:`, error);
-      setStockData(generateDemoData(symbol, interval));
+
+      // Check if we already have some data - if so, keep using it
+      if (!stockData) {
+        const demoData = generateDemoData(symbol, effectiveInterval);
+        setStockData(demoData);
+        setIsUsingDemoData(true);
+
+        // Cache demo data too to prevent refetching
+        apiCache.set(cacheKey, { data: demoData, timestamp: now });
+      }
+
+      // Log that we're using demo data
+      addLogMessage({
+        text: `Using demo data for ${symbol} due to API error. Attempt: ${retryCount}`,
+        type: 'warning',
+        timestamp: new Date()
+      });
+    } finally {
+      setLoading(false);
     }
-  }, [symbol, interval]);
+  }, [symbol, effectiveInterval, apiCache, shouldFetchNewData, retryCount, stockData]);
 
   // Initial data load and periodic update
   useEffect(() => {
     let isMounted = true;
 
+    // Only set loading to true for the initial load or when parameters change
+    if (lastFetchParams !== `${symbol}-${effectiveInterval}`) {
+      setLoading(true);
+    }
+
     const getStockData = async () => {
       if (!isMounted) return;
-      await fetchData();
+
+      try {
+        await fetchData();
+      } catch (e) {
+        console.error("Failed to fetch data even after fallback", e);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
     };
 
     getStockData();
 
-    // Determine update frequency based on interval
-    let updateInterval = 60000; // Default is 1 minute
-    switch (interval) {
-      case '1min': updateInterval = 60 * 1000; break;
-      case '5min': updateInterval = 5 * 60 * 1000; break;
-      case '15min': updateInterval = 15 * 60 * 1000; break;
-      case '30min': updateInterval = 30 * 60 * 1000; break;
-      case '60min': updateInterval = 60 * 60 * 1000; break;
-      case 'daily': updateInterval = 24 * 60 * 60 * 1000; break;
+    // For periodic updates, use a smarter approach
+    let updateInterval: number;
+
+    // If using demo data or retry count exceeded, don't set up periodic updates
+    if (isUsingDemoData || retryCount >= 2) {
+      // No auto refresh for demo data or after multiple retries
+      return () => {
+        isMounted = false;
+      };
     }
 
-    // Data update timer
+    // Otherwise, set up appropriate intervals based on the data type
+    switch (effectiveInterval) {
+      case '1min': updateInterval = 60 * 1000; break; // 1 minute
+      case '5min': updateInterval = 5 * 60 * 1000; break; // 5 minutes
+      case '15min': updateInterval = 15 * 60 * 1000; break; // 15 minutes
+      case '30min': updateInterval = 30 * 60 * 1000; break; // 30 minutes
+      case '60min': updateInterval = 60 * 60 * 1000; break; // 1 hour
+      case 'daily':
+      case 'weekly':
+      case 'monthly':
+      default:
+        // For daily, weekly, monthly - no auto refresh
+        return () => {
+          isMounted = false;
+        };
+    }
+
+    // Only set up timer for intraday data
     const timer = setInterval(getStockData, updateInterval);
 
     return () => {
       isMounted = false;
       clearInterval(timer);
     };
-  }, [fetchData, interval]);
+  }, [fetchData, effectiveInterval, isUsingDemoData, retryCount, symbol, lastFetchParams]);
 
   return stockData;
 }
