@@ -91,7 +91,7 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     }
 
     // Filter data
-    const filtered = stockData.filter(data => new Date(data.timestamp) >= cutoffDate);
+    const filtered = stockData.filter(data => new Date(data.timestamp as string | number | Date) >= cutoffDate);
 
     // Ensure at least 5 data points (display all data if insufficient)
     return filtered.length >= 5 ? filtered : stockData;
@@ -135,8 +135,8 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     }
 
     // Calculate highest and lowest prices
-    const maxPrice = Math.max(...filteredData.map(d => d.high));
-    const minPrice = Math.min(...filteredData.map(d => d.low));
+    const maxPrice = Math.max(...filteredData.map(d => d.high ?? d.close));
+    const minPrice = Math.min(...filteredData.map(d => d.low ?? d.close));
     const range = maxPrice - minPrice;
     const paddedMax = maxPrice + range * 0.1; // Add 10% padding
     const paddedMin = Math.max(0, minPrice - range * 0.1);
@@ -167,9 +167,9 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
             </div>
           </div>
           <div className="text-right text-gray-500 text-sm">
-            <div>High: ${Math.max(...filteredData.map(d => d.high)).toFixed(2)}</div>
-            <div>Low: ${Math.min(...filteredData.map(d => d.low)).toFixed(2)}</div>
-            <div>Volume: {(filteredData.reduce((sum, d) => sum + d.volume, 0) / 1000000).toFixed(2)}M</div>
+            <div>High: ${Math.max(...filteredData.map(d => d.high ?? d.close)).toFixed(2)}</div>
+            <div>Low: ${Math.min(...filteredData.map(d => d.low ?? d.close)).toFixed(2)}</div>
+            <div>Volume: {(filteredData.reduce((sum, d) => sum + (d.volume ?? 0), 0) / 1000000).toFixed(2)}M</div>
           </div>
         </div>
 
@@ -192,8 +192,8 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
             {/* Price range instead of candlesticks */}
             {filteredData.map((d, i) => {
               const x = i;
-              const yHigh = paddedMax - d.high;
-              const yLow = paddedMax - d.low;
+              const yHigh = paddedMax - (d.high ?? d.close);
+              const yLow = paddedMax - (d.low ?? d.close);
               return (
                 <line
                   key={i}
@@ -201,7 +201,7 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
                   y1={yHigh}
                   x2={x}
                   y2={yLow}
-                  stroke={d.close >= d.open ? "#22c55e" : "#ef4444"}
+                  stroke={d.close >= (d.open ?? d.close) ? "#22c55e" : "#ef4444"}
                   strokeWidth="1"
                 />
               );
@@ -212,11 +212,11 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
           <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-gray-500">
             {filteredData.length > 0 && (
               <>
-                <div>{new Date(filteredData[0].timestamp).toLocaleString('en-US', dateFormat)}</div>
+                <div>{new Date(filteredData[0].timestamp as string | number | Date).toLocaleString('en-US', dateFormat)}</div>
                 {filteredData.length > 2 && (
-                  <div>{new Date(filteredData[Math.floor(filteredData.length / 2)].timestamp).toLocaleString('en-US', dateFormat)}</div>
+                  <div>{new Date(filteredData[Math.floor(filteredData.length / 2)].timestamp as string | number | Date).toLocaleString('en-US', dateFormat)}</div>
                 )}
-                <div>{new Date(filteredData[filteredData.length - 1].timestamp).toLocaleString('en-US', dateFormat)}</div>
+                <div>{new Date(filteredData[filteredData.length - 1].timestamp as string | number | Date).toLocaleString('en-US', dateFormat)}</div>
               </>
             )}
           </div>
