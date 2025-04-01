@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { StockData } from '@/types/stock';
 import { LogMessage } from '@/hooks/useLogMessages';
 import { useStockData } from '@/hooks/useStockData';
-import InfoCanvas from "./InfoCanvas";
 
 // Temporary company name mapping
 const companyNames: Record<string, string> = {

@@ -1,3 +1,5 @@
+/* eslint-disable react/jsx-no-undef */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* InfoCanvas - 背景 + 屋台配置 + API key to use from environment variable (state-specific effect switching) */
 
 'use client';

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { StockData } from "@/types/stock";
 
 type AlphaVantageResponse = {

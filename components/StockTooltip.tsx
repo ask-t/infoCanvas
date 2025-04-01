@@ -32,7 +32,7 @@ const statusLabel: Record<string, string> = {
   'unknown': 'Unknown'
 };
 
-const StockTooltip: React.FC<StockTooltipProps> = ({ symbol, data, visible, status = 'unknown' }) => {
+const StockTooltip: React.FC<StockTooltipProps> = ({ symbol, data, visible }) => {
   if (!visible || !data || data.length === 0) return null;
 
   // Get the latest data
