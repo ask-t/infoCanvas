@@ -71,6 +71,53 @@ export function useLogMessages(maxMessages: number = 15) {
     });
   }, [maxMessages]);
 
+  // Generate logs based on stock data changes
+  const checkStockChanges = useCallback(() => {
+    Object.entries(stockDataCache).forEach(([symbol, cache]) => {
+      if (!cache.data || cache.data.length === 0) return;
+
+      const latestData = cache.data[cache.data.length - 1];
+      const previousClose = cache.previousClose;
+
+      // Skip if we don't have previous data for comparison
+      if (previousClose === undefined) return;
+
+      const currentClose = latestData.close;
+      const priceDiff = currentClose - previousClose;
+      const percentChange = (priceDiff / previousClose) * 100;
+
+      // Only log significant changes (>0.5%)
+      if (Math.abs(percentChange) >= 0.5) {
+        const changeDirection = priceDiff > 0 ? 'up' : 'down';
+        const changeType: MessageType =
+          Math.abs(percentChange) > 3 ? (changeDirection === 'up' ? 'success' : 'error') :
+            Math.abs(percentChange) > 1 ? 'warning' : 'info';
+
+        addLogMessage({
+          text: `${symbol}: ${changeDirection === 'up' ? '↑' : '↓'} ${Math.abs(priceDiff).toFixed(2)} (${percentChange > 0 ? '+' : ''}${percentChange.toFixed(2)}%)`,
+          type: changeType,
+          timestamp: new Date()
+        });
+
+        // Add additional context for significant changes
+        if (Math.abs(percentChange) > 2 && latestData.volume !== undefined) {
+          const volumeMsg = latestData.volume > 1000000
+            ? `High trading volume: ${(latestData.volume / 1000000).toFixed(1)}M shares`
+            : `Volume: ${(latestData.volume / 1000).toFixed(0)}K shares`;
+
+          addLogMessage({
+            text: `${symbol}: ${volumeMsg}`,
+            type: 'info',
+            timestamp: new Date()
+          });
+        }
+      }
+
+      // Update previous close for next comparison
+      cache.previousClose = currentClose;
+    });
+  }, [addLogMessage]);
+
   // Function to calculate and set the next update time
   const setNextUpdateTime = useCallback(() => {
     // Determine update interval in milliseconds based on the current interval setting
@@ -84,13 +131,71 @@ export function useLogMessages(maxMessages: number = 15) {
       case 'daily': updateIntervalMs = 24 * 60 * 60 * 1000; break;
     }
 
-    // Calculate next update time
-    const nextUpdate = new Date(Date.now() + updateIntervalMs);
+    // Get current date
+    const now = new Date();
+
+    // Calculate next exact update time based on time boundaries
+    let nextUpdate = new Date(now);
+
+    if (interval === '1min') {
+      // For 1 min, we want to update at the beginning of each minute
+      nextUpdate.setSeconds(0);
+      nextUpdate.setMilliseconds(0);
+      nextUpdate = new Date(nextUpdate.getTime() + 60000); // Add 1 minute
+    } else if (interval === '5min') {
+      // For 5 min, update at 0, 5, 10, 15... minutes of each hour
+      const currentMinute = now.getMinutes();
+      const nextIntervalMinute = Math.ceil(currentMinute / 5) * 5;
+      nextUpdate.setMinutes(nextIntervalMinute);
+      nextUpdate.setSeconds(0);
+      nextUpdate.setMilliseconds(0);
+      if (nextUpdate <= now) {
+        nextUpdate = new Date(nextUpdate.getTime() + 5 * 60000);
+      }
+    } else if (interval === '15min') {
+      // For 15 min, update at 0, 15, 30, 45 minutes of each hour
+      const currentMinute = now.getMinutes();
+      const nextIntervalMinute = Math.ceil(currentMinute / 15) * 15;
+      nextUpdate.setMinutes(nextIntervalMinute);
+      nextUpdate.setSeconds(0);
+      nextUpdate.setMilliseconds(0);
+      if (nextUpdate <= now) {
+        nextUpdate = new Date(nextUpdate.getTime() + 15 * 60000);
+      }
+    } else if (interval === '30min') {
+      // For 30 min, update at 0 and 30 minutes of each hour
+      const currentMinute = now.getMinutes();
+      const nextIntervalMinute = currentMinute < 30 ? 30 : 0;
+      nextUpdate.setMinutes(nextIntervalMinute);
+      nextUpdate.setSeconds(0);
+      nextUpdate.setMilliseconds(0);
+      if (nextIntervalMinute === 0 || nextUpdate <= now) {
+        nextUpdate = new Date(nextUpdate.getTime() + (nextIntervalMinute === 0 ? 60 * 60000 : 0));
+      }
+    } else if (interval === '60min') {
+      // For 60 min, update at the beginning of each hour
+      nextUpdate.setMinutes(0);
+      nextUpdate.setSeconds(0);
+      nextUpdate.setMilliseconds(0);
+      nextUpdate = new Date(nextUpdate.getTime() + 60 * 60000); // Add 1 hour
+    } else if (interval === 'daily') {
+      // For daily, update at midnight
+      nextUpdate.setHours(0);
+      nextUpdate.setMinutes(0);
+      nextUpdate.setSeconds(0);
+      nextUpdate.setMilliseconds(0);
+      nextUpdate = new Date(nextUpdate.getTime() + 24 * 60 * 60000); // Add 1 day
+    }
+
+    // Store next update time
     nextUpdateRef.current = nextUpdate;
+
+    // Calculate time remaining until next update
+    const timeRemaining = nextUpdate.getTime() - now.getTime();
 
     // Log the next update time
     addLogMessage({
-      text: `Next data update in ${formatTimeRemaining(updateIntervalMs)}`,
+      text: `Next data update in ${formatTimeRemaining(timeRemaining)} (${nextUpdate.toLocaleTimeString()})`,
       type: 'info',
       timestamp: new Date()
     });
@@ -112,15 +217,17 @@ export function useLogMessages(maxMessages: number = 15) {
             updateTimerRef.current = null;
           }
 
-          // Set new next update time
-          setNextUpdateTime();
-
-          // Also log that data update is happening
+          // Log that data update is happening
           addLogMessage({
             text: `Data update in progress...`,
             type: 'info',
             timestamp: new Date()
           });
+
+          // Schedule next update after a short delay to allow actual data update to occur
+          setTimeout(() => {
+            setNextUpdateTime();
+          }, 3000);
         } else if (remainingTime <= 60000 && remainingTime % 10000 < 1000) {
           // When less than a minute remains, log every 10 seconds
           addLogMessage({
@@ -157,53 +264,6 @@ export function useLogMessages(maxMessages: number = 15) {
       return `${seconds}s`;
     }
   };
-
-  // Generate logs based on stock data changes
-  const checkStockChanges = useCallback(() => {
-    Object.entries(stockDataCache).forEach(([symbol, cache]) => {
-      if (!cache.data || cache.data.length === 0) return;
-
-      const latestData = cache.data[cache.data.length - 1];
-      const previousClose = cache.previousClose;
-
-      // Skip if we don't have previous data for comparison
-      if (previousClose === undefined) return;
-
-      const currentClose = latestData.close;
-      const priceDiff = currentClose - previousClose;
-      const percentChange = (priceDiff / previousClose) * 100;
-
-      // Only log significant changes (>0.5%)
-      if (Math.abs(percentChange) >= 0.5) {
-        const changeDirection = priceDiff > 0 ? 'up' : 'down';
-        const changeType: MessageType =
-          Math.abs(percentChange) > 3 ? (changeDirection === 'up' ? 'success' : 'error') :
-            Math.abs(percentChange) > 1 ? 'warning' : 'info';
-
-        addLogMessage({
-          text: `${symbol}: ${changeDirection === 'up' ? '↑' : '↓'} ${Math.abs(priceDiff).toFixed(2)} (${percentChange > 0 ? '+' : ''}${percentChange.toFixed(2)}%)`,
-          type: changeType,
-          timestamp: new Date()
-        });
-
-        // Add additional context for significant changes
-        if (Math.abs(percentChange) > 2) {
-          const volumeMsg = latestData.volume > 1000000
-            ? `High trading volume: ${(latestData.volume / 1000000).toFixed(1)}M shares`
-            : `Volume: ${(latestData.volume / 1000).toFixed(0)}K shares`;
-
-          addLogMessage({
-            text: `${symbol}: ${volumeMsg}`,
-            type: 'info',
-            timestamp: new Date()
-          });
-        }
-      }
-
-      // Update previous close for next comparison
-      cache.previousClose = currentClose;
-    });
-  }, [addLogMessage]);
 
   // Check for market volatility
   const checkMarketVolatility = useCallback(() => {
