@@ -1,9 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { StockData } from '@/types/stock';
 import { LogMessage } from '@/hooks/useLogMessages';
 import { useStockData } from '@/hooks/useStockData';
+import {
+  ComposedChart,
+  Line,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+  Brush
+} from 'recharts';
 
 // Temporary company name mapping
 const companyNames: Record<string, string> = {
@@ -22,6 +35,22 @@ interface ChartOverlayProps {
   addLogMessage?: (message: LogMessage) => void;
 }
 
+// Processed stock data with additional fields for chart
+interface ProcessedStockData extends StockData {
+  dateStr: string;
+  ma5?: number;
+  ma20?: number;
+  changeColor: string;
+  isPositive: boolean;
+}
+
+// Custom tooltip props
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: Array<{ payload: ProcessedStockData }>;
+  label?: string;
+}
+
 const ChartOverlay: React.FC<ChartOverlayProps> = ({
   symbol,
   onClose,
@@ -30,6 +59,8 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [chartTimeframe, setChartTimeframe] = useState<'day' | 'week' | 'month'>('day');
+  const [showMA, setShowMA] = useState<boolean>(true);
+  const [showVolume, setShowVolume] = useState<boolean>(true);
 
   // useStockData hook to get data
   const stockData = useStockData(symbol);
@@ -97,6 +128,107 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
     return filtered.length >= 5 ? filtered : stockData;
   };
 
+  // Calculate moving averages and prepare data
+  const prepareChartData = (data: StockData[]): ProcessedStockData[] => {
+    if (!data || data.length === 0) return [];
+
+    // Calculate 5-day Moving Average (MA5) and 20-day Moving Average (MA20)
+    const withMovingAverages = data.map((item, index, array) => {
+      // 5-day MA calculation
+      let ma5 = 0;
+      if (index >= 4) {
+        const last5 = array.slice(index - 4, index + 1);
+        ma5 = last5.reduce((sum, item) => sum + item.close, 0) / 5;
+      }
+
+      // 20-day MA calculation
+      let ma20 = 0;
+      if (index >= 19) {
+        const last20 = array.slice(index - 19, index + 1);
+        ma20 = last20.reduce((sum, item) => sum + item.close, 0) / 20;
+      }
+
+      // Format date for display
+      const dateStr = new Date(item.timestamp as string | number | Date).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: chartTimeframe === 'day' ? '2-digit' : undefined,
+        minute: chartTimeframe === 'day' ? '2-digit' : undefined
+      });
+
+      // Calculate price change colors
+      const priceChange = item.close - (item.open ?? item.close);
+      const isPositive = priceChange >= 0;
+      const changeColor = isPositive ? "#22c55e" : "#ef4444";
+
+      return {
+        ...item,
+        dateStr,
+        ma5: ma5 > 0 ? ma5 : undefined,
+        ma20: ma20 > 0 ? ma20 : undefined,
+        changeColor,
+        isPositive
+      };
+    });
+
+    return withMovingAverages;
+  };
+
+  // Memoize processed data to prevent recalculation on each render
+  const processedData = useMemo(() => {
+    const filteredData = getFilteredData();
+    return prepareChartData(filteredData);
+  }, [stockData, chartTimeframe]);
+
+  // Custom tooltip component
+  const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white dark:bg-gray-800 p-3 border border-gray-200 dark:border-gray-700 rounded shadow-lg">
+          <p className="font-bold text-gray-700 dark:text-gray-300">{data.dateStr}</p>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            <div className="text-gray-600 dark:text-gray-400">Open:</div>
+            <div className="font-mono">${(data.open ?? data.close).toFixed(2)}</div>
+
+            <div className="text-gray-600 dark:text-gray-400">High:</div>
+            <div className="font-mono">${(data.high ?? data.close).toFixed(2)}</div>
+
+            <div className="text-gray-600 dark:text-gray-400">Low:</div>
+            <div className="font-mono">${(data.low ?? data.close).toFixed(2)}</div>
+
+            <div className="text-gray-600 dark:text-gray-400">Close:</div>
+            <div className={`font-mono ${data.isPositive ? 'text-green-500' : 'text-red-500'}`}>
+              ${data.close.toFixed(2)}
+            </div>
+
+            {data.volume && (
+              <>
+                <div className="text-gray-600 dark:text-gray-400">Volume:</div>
+                <div className="font-mono">{(data.volume / 1000000).toFixed(2)}M</div>
+              </>
+            )}
+
+            {data.ma5 && showMA && (
+              <>
+                <div className="text-gray-600 dark:text-gray-400">MA5:</div>
+                <div className="font-mono text-blue-500">${data.ma5.toFixed(2)}</div>
+              </>
+            )}
+
+            {data.ma20 && showMA && (
+              <>
+                <div className="text-gray-600 dark:text-gray-400">MA20:</div>
+                <div className="font-mono text-purple-500">${data.ma20.toFixed(2)}</div>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   // Render chart
   const renderChart = () => {
     if (loading) {
@@ -123,10 +255,7 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
       );
     }
 
-    const filteredData = getFilteredData();
-    console.log(`Period: ${chartTimeframe}, Filtered data points: ${filteredData.length}`);
-
-    if (filteredData.length === 0) {
+    if (processedData.length === 0) {
       return (
         <div className="flex items-center justify-center h-full text-gray-500">
           No data found for the selected period
@@ -134,31 +263,21 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
       );
     }
 
-    // Calculate highest and lowest prices
-    const maxPrice = Math.max(...filteredData.map(d => d.high ?? d.close));
-    const minPrice = Math.min(...filteredData.map(d => d.low ?? d.close));
-    const range = maxPrice - minPrice;
-    const paddedMax = maxPrice + range * 0.1; // Add 10% padding
-    const paddedMin = Math.max(0, minPrice - range * 0.1);
-
-    // Price change determination
-    const firstClose = filteredData[0]?.close || 0;
-    const lastClose = filteredData[filteredData.length - 1]?.close || 0;
+    // Calculate price change for market summary
+    const firstClose = processedData[0]?.close || 0;
+    const lastClose = processedData[processedData.length - 1]?.close || 0;
     const priceChange = lastClose - firstClose;
     const percentChange = ((priceChange / firstClose) * 100).toFixed(2);
     const isPositive = priceChange >= 0;
 
-    // Date format setting
-    const dateFormat: Intl.DateTimeFormatOptions =
-      chartTimeframe === 'day'
-        ? { hour: '2-digit', minute: '2-digit' }
-        : chartTimeframe === 'week'
-          ? { month: 'numeric', day: 'numeric', hour: '2-digit' }
-          : { month: 'numeric', day: 'numeric' };
+    // Calculate statistics
+    const highPrice = Math.max(...processedData.map(d => d.high ?? d.close));
+    const lowPrice = Math.min(...processedData.map(d => d.low ?? d.close));
+    const avgVolume = processedData.reduce((sum, d) => sum + (d.volume ?? 0), 0) / processedData.length;
 
     return (
       <div className="h-full flex flex-col">
-        {/* Price summary */}
+        {/* Market Summary */}
         <div className="mb-4 flex justify-between items-center">
           <div>
             <div className="text-3xl font-bold">${lastClose.toFixed(2)}</div>
@@ -167,66 +286,133 @@ const ChartOverlay: React.FC<ChartOverlayProps> = ({
             </div>
           </div>
           <div className="text-right text-gray-500 text-sm">
-            <div>High: ${Math.max(...filteredData.map(d => d.high ?? d.close)).toFixed(2)}</div>
-            <div>Low: ${Math.min(...filteredData.map(d => d.low ?? d.close)).toFixed(2)}</div>
-            <div>Volume: {(filteredData.reduce((sum, d) => sum + (d.volume ?? 0), 0) / 1000000).toFixed(2)}M</div>
+            <div>High: ${highPrice.toFixed(2)}</div>
+            <div>Low: ${lowPrice.toFixed(2)}</div>
+            <div>Avg Vol: {(avgVolume / 1000000).toFixed(2)}M</div>
           </div>
         </div>
 
-        {/* Chart drawing area */}
-        <div className="flex-1 relative">
-          {/* Chart SVG */}
-          <svg className="w-full h-full" viewBox={`0 0 ${filteredData.length} ${paddedMax - paddedMin}`} preserveAspectRatio="none">
-            {/* Price line */}
-            <path
-              d={filteredData.map((d, i) => {
-                const x = i;
-                const y = paddedMax - d.close;
-                return i === 0 ? `M ${x} ${y}` : `L ${x} ${y}`;
-              }).join(' ')}
-              stroke={isPositive ? "#22c55e" : "#ef4444"}
-              strokeWidth="2"
-              fill="none"
-            />
+        {/* Controls */}
+        <div className="mb-4 flex flex-wrap justify-between items-center">
+          <div className="flex space-x-2 mb-2 sm:mb-0">
+            <button
+              onClick={() => setShowMA(!showMA)}
+              className={`px-3 py-1 text-xs rounded ${showMA ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
+            >
+              Moving Averages
+            </button>
+            <button
+              onClick={() => setShowVolume(!showVolume)}
+              className={`px-3 py-1 text-xs rounded ${showVolume ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}
+            >
+              Volume
+            </button>
+          </div>
+        </div>
 
-            {/* Price range instead of candlesticks */}
-            {filteredData.map((d, i) => {
-              const x = i;
-              const yHigh = paddedMax - (d.high ?? d.close);
-              const yLow = paddedMax - (d.low ?? d.close);
-              return (
-                <line
-                  key={i}
-                  x1={x}
-                  y1={yHigh}
-                  x2={x}
-                  y2={yLow}
-                  stroke={d.close >= (d.open ?? d.close) ? "#22c55e" : "#ef4444"}
-                  strokeWidth="1"
+        {/* Advanced Chart */}
+        <div className="flex-1">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={processedData}
+              margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+              <XAxis
+                dataKey="dateStr"
+                tick={{ fontSize: 10 }}
+                tickCount={5}
+              />
+              <YAxis
+                yAxisId="price"
+                domain={['auto', 'auto']}
+                orientation="right"
+                tickFormatter={(value) => `$${value.toFixed(0)}`}
+              />
+              {showVolume && (
+                <YAxis
+                  yAxisId="volume"
+                  orientation="left"
+                  tickFormatter={(value) => `${(value / 1000000).toFixed(0)}M`}
+                  domain={[0, 'dataMax']}
                 />
-              );
-            })}
-          </svg>
+              )}
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
 
-          {/* X-axis label (time or date) */}
-          <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-gray-500">
-            {filteredData.length > 0 && (
-              <>
-                <div>{new Date(filteredData[0].timestamp as string | number | Date).toLocaleString('en-US', dateFormat)}</div>
-                {filteredData.length > 2 && (
-                  <div>{new Date(filteredData[Math.floor(filteredData.length / 2)].timestamp as string | number | Date).toLocaleString('en-US', dateFormat)}</div>
-                )}
-                <div>{new Date(filteredData[filteredData.length - 1].timestamp as string | number | Date).toLocaleString('en-US', dateFormat)}</div>
-              </>
-            )}
-          </div>
+              {/* Price Candlestick representation using scatter & reference line */}
+              {processedData.map((entry, index) => (
+                <React.Fragment key={index}>
+                  {/* Vertical line from low to high */}
+                  <ReferenceLine
+                    yAxisId="price"
+                    segment={[
+                      { x: entry.dateStr, y: entry.low ?? entry.close },
+                      { x: entry.dateStr, y: entry.high ?? entry.close }
+                    ]}
+                    stroke={entry.changeColor}
+                    strokeWidth={1}
+                    ifOverflow="extendDomain"
+                  />
+                </React.Fragment>
+              ))}
 
-          {/* Y-axis label (price) */}
-          <div className="absolute top-0 bottom-0 right-0 flex flex-col justify-between text-xs text-gray-500">
-            <div>${paddedMax.toFixed(2)}</div>
-            <div>${((paddedMax + paddedMin) / 2).toFixed(2)}</div>
-            <div>${paddedMin.toFixed(2)}</div>
-          </div>
+              {/* Close price line */}
+              <Line
+                yAxisId="price"
+                type="monotone"
+                dataKey="close"
+                stroke="#0369a1"
+                strokeWidth={1.5}
+                dot={false}
+                name="Close Price"
+              />
+
+              {/* Moving Averages */}
+              {showMA && (
+                <>
+                  <Line
+                    yAxisId="price"
+                    type="monotone"
+                    dataKey="ma5"
+                    stroke="#3b82f6"
+                    strokeWidth={1}
+                    dot={false}
+                    name="MA5"
+                  />
+                  <Line
+                    yAxisId="price"
+                    type="monotone"
+                    dataKey="ma20"
+                    stroke="#a855f7"
+                    strokeWidth={1}
+                    dot={false}
+                    name="MA20"
+                  />
+                </>
+              )}
+
+              {/* Volume bars */}
+              {showVolume && (
+                <Bar
+                  yAxisId="volume"
+                  dataKey="volume"
+                  name="Volume"
+                  barSize={5}
+                  opacity={0.5}
+                  fill="#6b7280"
+                />
+              )}
+
+              {/* Brush for zoom/pan */}
+              <Brush
+                dataKey="dateStr"
+                height={20}
+                stroke="#8884d8"
+                startIndex={Math.max(0, processedData.length - Math.min(20, processedData.length))}
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
         </div>
       </div>
     );
